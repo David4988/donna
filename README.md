@@ -1,153 +1,227 @@
 # DONNA
 
-A mostly-local desktop AI assistant you talk to. It searches the web, opens apps and finds files. On screen it appears as a golden, Age-of-Ultron-style sphere in an OS-like 3D interface.
+> *"I'm Donna. I know everything."*
 
-> **Status:** planning / pre-alpha. This README is the living design doc for v1. Update it as decisions get made.
+DONNA is a mostly-local, voice-driven personal assistant for the desktop. You talk to it; it understands, acts on your machine, and shows what it's doing through a golden, orb-style 3D interface.
 
-**Later (post-v1):** hand gestures, a projector display and extra cameras.
+Named after Donna Paulsen from *Suits*: the assistant who knows what you need before you finish asking.
 
----
-
-## Table of contents
-
-- [Hardware](#hardware)
-- [Architecture](#architecture)
-- [Event protocol](#event-protocol)
-- [Stack](#stack)
-- [Tools v1](#tools-v1)
-- [Model selection](#model-selection)
-- [About Claude](#about-claude)
-- [Milestones](#milestones)
-- [Open decisions](#open-decisions)
+> **Status:** Planning. No code yet.
 
 ---
 
-## Hardware
+## Goals (v1)
 
-| Component | Spec |
-|---|---|
-| CPU | AMD Ryzen 7 5800X |
-| GPU | AMD Radeon RX 580 (8 GB VRAM) |
-| RAM | 32 GB DDR4 |
-| OS | Windows |
+- **Voice in, voice out**: push-to-talk first, wake word later.
+- **Tools**: web search, open apps, find files, open results.
+- **Local first**: LLM, speech-to-text, and text-to-speech all run on this machine. Only web search touches the internet.
+- **OS-like 3D interface**: a glowing golden orb that reacts to state and voice, with floating HUD panels for transcripts, tool activity, and results.
 
-**Resource split**
+### Non-goals (v1)
 
-- **GPU:** the LLM and the sphere rendering.
-- **CPU:** speech-to-text, text-to-speech, voice activity detection (VAD) and the tools.
+Gestures, cameras, projector UI, file moves/deletes, long-term memory, semantic file search. These are planned for later and are listed under [Roadmap](#roadmap-beyond-v1).
+
+---
+
+## Target hardware
+
+| Component | Spec | Role |
+|---|---|---|
+| CPU | Ryzen 7 5800X | STT, TTS, VAD, tools |
+| GPU | Radeon RX 580 (8 GB) | LLM + 3D rendering |
+| RAM | 32 GB DDR4 | Headroom |
+| OS | Windows | |
 
 ---
 
 ## Architecture
 
 ```text
-Tauri app (thin Rust + React/R3F)  ◄── WebSocket events ──►  Python core
- - window, tray, global hotkey                                - audio in/out
- - golden sphere + HUD panels                                 - agent loop + state machine
- - renders events, decides nothing                            - tools → Ollama
+┌──────────── TAURI APP (thin Rust + React/R3F) ────────────┐
+│  Rust:  window, tray, global hotkey, launches core sidecar  │
+│  React: golden orb, HUD panels, transcript, settings        │
+└─────────────────────────────┬──────────────────────────────┘
+                              │  WebSocket  ws://127.0.0.1:<port>
+┌─────────────────────────────┴───────────── PYTHON CORE ────┐
+│  audio:  mic → VAD → STT            TTS → speakers + levels │
+│  agent:  state machine + loop → Ollama (localhost:11434)    │
+│  tools:  open_app · find_files · open_path · web_search     │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-- **Rust stays thin.** It handles the push-to-talk hotkey, the frameless/transparent window and the tray. Later it will also launch the Python core as a sidecar.
-- **Python owns the brain.** It does audio capture and playback, runs the agent and executes the tools.
-- **The frontend only renders.** It receives events and audio levels and makes no decisions.
+### Principles
+
+- **Python owns the brain.** Audio, agent, tools, and the LLM client all live in the core.
+- **Rust stays thin.** Only what Tauri is good at: window, tray, hotkey, sidecar.
+- **The frontend decides nothing.** It renders events from the core.
+- **The event protocol is the contract.** Everything hangs off it.
+- **The LLM sits behind an OpenAI-compatible interface**, so swapping models (or adding an optional cloud fallback) is a config change, not a rewrite.
+
+### State machine
+
+```text
+IDLE → LISTENING → THINKING → EXECUTING → SPEAKING → IDLE
+                       └──────────→ ERROR ──────────┘
+```
+
+---
 
 ## Event protocol
 
-The WebSocket protocol is the contract between the UI and the core.
+The single source of truth lives in `protocol/` and is mirrored as Pydantic models (core) and TypeScript types (desktop).
 
-| Direction | Event | Purpose |
+| Direction | Event | Payload |
 |---|---|---|
-| core → UI | `state` | Assistant state changes (idle, listening, thinking, speaking, …) |
-| core → UI | `transcript` | What the user said (STT output) |
-| core → UI | `reply.delta` | Streaming chunks of the assistant's reply |
-| core → UI | `tool.start` / `tool.end` | A tool call began or finished |
-| core → UI | `results` | Structured results for HUD panels (search hits, files, …) |
-| core → UI | `audio.level` | Mic/speaker levels that drive the sphere |
-| core → UI | `error` | Errors to surface |
-| UI → core | `ptt` | Push-to-talk pressed/released |
-| UI → core | `text.input` | Typed input. Lets you test the whole brain without a mic |
-| UI → core | `cancel` | Abort the current turn |
+| UI → Core | `ptt.down` / `ptt.up` | — |
+| UI → Core | `text.input` | `{ text }` |
+| UI → Core | `cancel` | — |
+| Core → UI | `state` | `{ value: IDLE \| LISTENING \| THINKING \| EXECUTING \| SPEAKING \| ERROR }` |
+| Core → UI | `transcript` | `{ text, final }` |
+| Core → UI | `reply.delta` | `{ text }` (streamed tokens) |
+| Core → UI | `tool.start` | `{ id, name, args }` |
+| Core → UI | `tool.end` | `{ id, ok, summary }` |
+| Core → UI | `results` | `{ kind: files \| apps \| web, items[] }` |
+| Core → UI | `audio.level` | `{ rms }` (~30 Hz) |
+| Core → UI | `error` | `{ message }` |
+
+`text.input` lets the whole brain be tested by typing, with no microphone.
 
 ---
 
 ## Stack
 
-| Piece | Choice |
-|---|---|
-| LLM runtime | [Ollama](https://ollama.com), behind an OpenAI-compatible interface so a cloud model can be swapped in later |
-| VAD | Silero VAD |
-| Activation | Push-to-talk first, wake word ([openWakeWord](https://github.com/dscripka/openWakeWord)) later |
-| STT | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) small/distil, on CPU |
-| TTS | [Piper](https://github.com/rhasspy/piper) first, Kokoro later, on CPU |
-| Web search | SearXNG or DuckDuckGo, plus page text extraction |
-| Files | [Everything](https://www.voidtools.com/) (`es.exe`) |
-| Apps | Start Menu + AppsFolder index, fuzzy matching |
-| UI | [Tauri](https://tauri.app) + React + React Three Fiber, shader-driven sphere with bloom |
+| Piece | Choice | Runs on |
+|---|---|---|
+| Desktop shell | Tauri + React + React Three Fiber | — |
+| LLM runtime | Ollama | GPU |
+| LLM model | **TBD**, see [Model selection](#model-selection) | GPU |
+| VAD | Silero VAD | CPU |
+| Activation | Push-to-talk (Tauri global shortcut), openWakeWord later | CPU |
+| STT | faster-whisper (`small.en` / `distil-small.en`, int8) | CPU |
+| TTS | Piper first, Kokoro later | CPU |
+| Web search | SearXNG (self-hosted) or DuckDuckGo, **TBD** | — |
+| File search | Everything (voidtools) via `es.exe` | CPU |
+| App launch | Start Menu `.lnk` + `shell:AppsFolder` index, fuzzy matched | CPU |
 
 ---
 
-## Tools v1
+## Tools (v1)
 
-Every tool has a guardrail:
+| Tool | Args | Implementation | Guardrail |
+|---|---|---|---|
+| `open_app` | `name` | Fuzzy match against the indexed Start Menu apps | Launches indexed entries only, no arbitrary paths |
+| `find_files` | `query`, `limit` | `es.exe` | Read-only; returns paths and metadata, not contents |
+| `open_path` | `path` | `os.startfile` | Only paths returned by an earlier `find_files` call |
+| `web_search` | `query` | Search, then fetch and extract text from the top 1–2 pages | Page size capped |
 
-| Tool | Guardrail |
-|---|---|
-| `open_app` | Only launches apps that are in the index |
-| `find_files` | Read-only |
-| `open_path` | Only opens paths returned by a previous search |
-| `web_search` | Page size is capped |
+### Safety rules
 
-Also:
-
-- **No shell access**, and no move or delete operations in v1.
-- **A fast path** handles obvious commands ("open X") without calling the LLM.
+- No generic shell or command execution tool.
+- No moves, renames, or deletes in v1. When they are added, they go behind explicit confirmation.
+- **Fast path:** obvious commands ("open X") are matched without calling the LLM.
 
 ---
 
 ## Model selection
 
-**Status: undecided. Benchmark first.**
-
-The wish is a 27B model. The concern is that a dense 27B on 8 GB of VRAM likely runs at about 3–4 tokens/s. That works out to 20–30 s per voice command, which is too slow for conversation.
+**Undecided.** This is chosen by measurement, not by leaderboard.
 
 | Candidate | Notes |
 |---|---|
-| `qwen3.5:4b` | Default pick: fast and fits comfortably |
-| `qwen3.5:9b` | Tight fit in 8 GB |
-| `qwen3.6:35b` (MoE) | The "big brain" option. MoE suits this hardware better than a dense 27B |
+| `qwen3.5:4b` | Default pick: fits comfortably in VRAM, fast |
+| `qwen3.5:9b` | Tight on 8 GB, especially alongside 3D rendering |
+| `qwen3.6:35b` (MoE) | "Big brain" option; few active params, heavy RAM offload |
+| 27B dense | Likely ~3–4 tok/s with CPU offload; probably too slow for voice |
 
-Thinking mode stays **off** for voice.
+Rules:
 
-**How to decide**
+- **Thinking mode OFF** for voice commands.
+- Keep the system prompt and tool schemas short. Prompt processing is where latency hides on this GPU.
+- Set `keep_alive` so the model stays loaded.
 
-1. Run `ollama run <model> --verbose` for each candidate and record the tokens/s.
-2. Write an eval of about 20 utterances that checks tool calls. It doubles as a regression test.
+### Evaluation
+
+1. `ollama run <model> --verbose` and record the eval rate (tok/s).
+2. `ollama ps` and confirm the model sits 100% on GPU.
+3. Run a ~20-utterance eval set (`eval/`) through the agent loop. For each utterance, record: correct tool, usable args, time to first token, total time. Include no-tool cases such as "hi".
+
+The eval set doubles as a regression test for prompt and model changes.
 
 ---
 
-## About Claude
+## Latency budget
 
-- Claude Pro has no API access, so it can't be the assistant's brain.
-- Claude Code is used for plumbing. The agent loop and the protocol are written by hand.
-- A cloud fallback, if added, would need separate pay-as-you-go API billing.
+Target: **under ~2 s from end of speech to first audio.**
+
+| Stage | Budget |
+|---|---|
+| End-of-speech detection | ~300 ms |
+| STT | ~300 ms |
+| LLM first token | ~300–800 ms |
+| TTS first audio | ~200 ms |
+
+Every stage streams. TTS speaks sentence by sentence as tokens arrive.
 
 ---
 
 ## Milestones
 
-- [ ] **0. Benchmarks:** model speed, `es.exe` and Piper all working
-- [ ] **1. Text-only agent loop in a terminal** *(the hard part)*
-- [ ] **2. Voice:** push-to-talk, under ~2 s to first audio
-- [ ] **3. Tauri shell** connected over WebSocket
-- [ ] **4. Sphere** reacting to state and audio
-- [ ] **5. HUD panels** for results
-- [ ] **6. Polish:** wake word, Kokoro, barge-in, sidecar packaging
+| # | Goal | Done when |
+|---|---|---|
+| 0 | Benchmarks | Model tok/s measured, `es.exe` works, Piper speaks a line |
+| 1 | Brain in a terminal | A typed "find my TrialGuard docs" produces a tool call and a sensible answer |
+| 2 | Voice | Hold the hotkey, speak, hear a streamed reply within the latency budget |
+| 3 | Tauri shell | Window connects over WebSocket and shows state and transcript |
+| 4 | The orb | R3F orb reacts to state and `audio.level`, with bloom |
+| 5 | HUD | Results render as panels; clicking one opens it |
+| 6 | Polish | Wake word, Kokoro voice, cancel/barge-in, sidecar packaging |
+
+Milestones 1–2 are the hard ones. 4–5 are the fun ones. Don't let the fun ones jump the queue.
+
+---
+
+## Repository layout
+
+```text
+donna/
+├── desktop/                 # Tauri + React + R3F
+│   ├── src-tauri/           # Rust: hotkey, window, tray, sidecar
+│   └── src/
+│       ├── scene/           # Orb, shaders, HUD panels
+│       ├── core-client/     # WebSocket client + typed events
+│       └── state/           # Store driven by core events
+├── core/                    # Python
+│   ├── agent/               # Loop, state machine, LLM client, prompts
+│   ├── audio/               # VAD, STT, TTS, player
+│   ├── tools/               # Registry, open_app, find_files, web_search
+│   └── server/              # WebSocket + event bus
+├── protocol/                # Event schema (source of truth)
+├── eval/                    # Tool-call eval set + results
+└── docs/                    # Design notes, decisions
+```
 
 ---
 
 ## Open decisions
 
-- [ ] Which model (benchmark first)
+- [ ] LLM model (benchmark first)
 - [ ] SearXNG vs DuckDuckGo
-- [ ] The push-to-talk hotkey
-- [ ] The assistant's name and wake phrase
+- [ ] Push-to-talk hotkey
+- [ ] Wake phrase ("Donna"?)
+- [ ] Optional cloud fallback for a "think hard / research" mode (separate API billing)
+
+---
+
+## Roadmap beyond v1
+
+- Local file index (SQLite + extracted text + semantic search). Possibly the front door to a deliberate notes vault.
+- Conversation memory.
+- File operations with confirmation.
+- Windows UI Automation, plus screenshot-and-vision fallback for desktop control.
+- Gesture recognition (MediaPipe), with gestures resolved to semantic events independently of the LLM.
+- Multi-camera and stereo experiments with existing webcams.
+- Projected desk UI with camera–projector calibration.
+- Tablet as status console.
+- Distributed nodes (vision, Windows automation) over the network.
+
+**Budget rule: ₹0 first.** Prototype on existing hardware before buying anything.
