@@ -122,3 +122,27 @@ async def test_cancelled_turn_leaves_no_history() -> None:
     assert core.agent.history == []
     assert rec.of("turn.cancelled")
     assert core.assistant_state == "IDLE"
+
+
+async def test_call_ids_are_unique_within_a_turn_even_if_the_model_repeats_them() -> None:
+    class Repeats:
+        async def complete(
+            self, messages: Sequence[Message], tools: Sequence[ToolSpec]
+        ) -> LLMResponse:
+            if sum(m.role == "tool" for m in messages) >= 2:
+                return LLMResponse(text="done")
+            return LLMResponse(tool_calls=(ToolCall("call_0", "find_files", {"query": "x"}),))
+
+    core, rec = run_core(Repeats())
+    await say(core, "go")
+    ids = [e.payload.call_id for e in rec.of("tool.request")]
+    assert ids == ["call_1", "call_2"]
+
+
+async def test_multi_step_works_again_later_in_the_same_session() -> None:
+    core, rec = run_core()
+    await say(core, "find my TrialGuard files and open the first one")
+    await say(core, "find my TrialGuard files and open the first one")
+    tools = [e.payload.tool for e in rec.of("tool.request")]
+    assert tools == ["find_files", "open_result"] * 2
+    assert rec.of("tool.request")[3].payload.args == {"result_id": "r_5"}

@@ -21,7 +21,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -33,17 +32,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "assistant.state",
           "default": "assistant.state",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -51,6 +47,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "AssistantStateChanged",
@@ -79,7 +79,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -91,17 +90,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "assistant.text",
           "default": "assistant.text",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -109,6 +105,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "AssistantText",
@@ -118,17 +118,16 @@
       "additionalProperties": false,
       "properties": {
         "text": {
-          "title": "Text",
           "type": "string"
         },
         "final": {
           "default": true,
-          "title": "Final",
           "type": "boolean"
         }
       },
       "required": [
-        "text"
+        "text",
+        "final"
       ],
       "title": "AssistantTextPayload",
       "type": "object"
@@ -139,18 +138,17 @@
         "name": {
           "maxLength": 64,
           "minLength": 1,
-          "title": "Name",
           "type": "string"
         },
         "version": {
           "default": "0",
           "maxLength": 32,
-          "title": "Version",
           "type": "string"
         }
       },
       "required": [
-        "name"
+        "name",
+        "version"
       ],
       "title": "ClientInfo",
       "type": "object"
@@ -182,7 +180,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -194,17 +191,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "error",
           "default": "error",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -212,6 +206,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "Error",
@@ -221,11 +219,9 @@
       "additionalProperties": false,
       "properties": {
         "code": {
-          "title": "Code",
           "type": "string"
         },
         "message": {
-          "title": "Message",
           "type": "string"
         }
       },
@@ -241,7 +237,6 @@
       "description": "What clients and the LLM may see about a result. Never the raw path/URL.",
       "properties": {
         "id": {
-          "title": "Id",
           "type": "string"
         },
         "kind": {
@@ -250,23 +245,21 @@
             "app",
             "web"
           ],
-          "title": "Kind",
           "type": "string"
         },
         "title": {
-          "title": "Title",
           "type": "string"
         },
         "subtitle": {
           "default": "",
-          "title": "Subtitle",
           "type": "string"
         }
       },
       "required": [
         "id",
         "kind",
-        "title"
+        "title",
+        "subtitle"
       ],
       "title": "ResultItem",
       "type": "object"
@@ -330,7 +323,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -342,17 +334,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "session.hello",
           "default": "session.hello",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -360,6 +349,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "SessionHello",
@@ -371,7 +364,6 @@
         "token": {
           "maxLength": 256,
           "minLength": 1,
-          "title": "Token",
           "type": "string"
         },
         "client": {
@@ -391,7 +383,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -403,17 +394,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "session.ready",
           "default": "session.ready",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -421,6 +409,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "SessionReady",
@@ -430,15 +422,12 @@
       "additionalProperties": false,
       "properties": {
         "session_id": {
-          "title": "Session Id",
           "type": "string"
         },
         "protocol_version": {
-          "title": "Protocol Version",
           "type": "integer"
         },
         "server_version": {
-          "title": "Server Version",
           "type": "string"
         },
         "state": {
@@ -448,7 +437,6 @@
           "items": {
             "type": "string"
           },
-          "title": "Tools",
           "type": "array"
         }
       },
@@ -468,7 +456,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -480,17 +467,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "tool.error",
           "default": "tool.error",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -498,6 +482,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "ToolError",
@@ -507,19 +495,15 @@
       "additionalProperties": false,
       "properties": {
         "call_id": {
-          "title": "Call Id",
           "type": "string"
         },
         "tool": {
-          "title": "Tool",
           "type": "string"
         },
         "code": {
-          "title": "Code",
           "type": "string"
         },
         "message": {
-          "title": "Message",
           "type": "string"
         }
       },
@@ -538,7 +522,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -550,17 +533,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "tool.request",
           "default": "tool.request",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -568,6 +548,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "ToolRequest",
@@ -577,20 +561,16 @@
       "additionalProperties": false,
       "properties": {
         "call_id": {
-          "title": "Call Id",
           "type": "string"
         },
         "tool": {
-          "title": "Tool",
           "type": "string"
         },
         "args": {
           "additionalProperties": true,
-          "title": "Args",
           "type": "object"
         },
         "label": {
-          "title": "Label",
           "type": "string"
         }
       },
@@ -609,7 +589,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -621,17 +600,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "tool.result",
           "default": "tool.result",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -639,6 +615,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "ToolResult",
@@ -648,29 +628,26 @@
       "additionalProperties": false,
       "properties": {
         "call_id": {
-          "title": "Call Id",
           "type": "string"
         },
         "tool": {
-          "title": "Tool",
           "type": "string"
         },
         "summary": {
-          "title": "Summary",
           "type": "string"
         },
         "results": {
           "items": {
             "$ref": "#/$defs/ResultItem"
           },
-          "title": "Results",
           "type": "array"
         }
       },
       "required": [
         "call_id",
         "tool",
-        "summary"
+        "summary",
+        "results"
       ],
       "title": "ToolResultPayload",
       "type": "object"
@@ -681,7 +658,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -693,17 +669,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "turn.cancelled",
           "default": "turn.cancelled",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -711,6 +684,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "TurnCancelled",
@@ -720,7 +697,6 @@
       "additionalProperties": false,
       "properties": {
         "reason": {
-          "title": "Reason",
           "type": "string"
         }
       },
@@ -736,7 +712,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -748,17 +723,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "turn.completed",
           "default": "turn.completed",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -766,6 +738,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "TurnCompleted",
@@ -779,7 +755,6 @@
             "fast_path",
             "llm"
           ],
-          "title": "Route",
           "type": "string"
         }
       },
@@ -795,7 +770,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -807,17 +781,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "turn.failed",
           "default": "turn.failed",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -825,6 +796,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "TurnFailed",
@@ -834,7 +809,6 @@
       "additionalProperties": false,
       "properties": {
         "message": {
-          "title": "Message",
           "type": "string"
         }
       },
@@ -850,7 +824,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -862,17 +835,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "turn.started",
           "default": "turn.started",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -880,6 +850,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "TurnStarted",
@@ -889,7 +863,6 @@
       "additionalProperties": false,
       "properties": {
         "input": {
-          "title": "Input",
           "type": "string"
         }
       },
@@ -905,7 +878,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -917,23 +889,27 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "user.cancel",
           "default": "user.cancel",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
           "$ref": "#/$defs/UserCancelPayload"
         }
       },
+      "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
+        "payload"
+      ],
       "title": "UserCancel",
       "type": "object"
     },
@@ -949,7 +925,6 @@
         "v": {
           "const": 1,
           "default": 1,
-          "title": "V",
           "type": "integer"
         },
         "turn": {
@@ -961,17 +936,14 @@
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Turn"
+          "default": null
         },
         "ts": {
-          "title": "Ts",
           "type": "string"
         },
         "type": {
           "const": "user.text",
           "default": "user.text",
-          "title": "Type",
           "type": "string"
         },
         "payload": {
@@ -979,6 +951,10 @@
         }
       },
       "required": [
+        "v",
+        "turn",
+        "ts",
+        "type",
         "payload"
       ],
       "title": "UserText",
@@ -990,7 +966,6 @@
         "text": {
           "maxLength": 2000,
           "minLength": 1,
-          "title": "Text",
           "type": "string"
         }
       },

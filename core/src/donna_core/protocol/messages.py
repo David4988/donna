@@ -34,7 +34,12 @@ Route = Literal["fast_path", "llm"]
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        # In the generated schema, fields the core always sends are required.
+        json_schema_serialization_defaults_required=True,
+    )
 
 
 # ---------------------------------------------------------------- payloads

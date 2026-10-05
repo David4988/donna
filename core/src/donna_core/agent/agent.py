@@ -12,7 +12,9 @@ a CLI, the Tauri UI, or a test is listening.
 
 from __future__ import annotations
 
+import itertools
 import json
+from dataclasses import replace
 
 from donna_core.agent.fastpath import FastPath
 from donna_core.agent.speaker import Speaker
@@ -77,10 +79,13 @@ class Agent:
 
     async def run(self, ctx: TurnContext) -> Route:
         await self._state.transition(S.THINKING, ctx.turn_id)
+        # Call ids are assigned here, not trusted from the model: local models
+        # often restart at "call_0" on every response.
+        ids = (f"call_{n}" for n in itertools.count(1))
 
         call = self._fast_path.match(ctx.input)
         if call is not None:
-            outcome = await self._execute(ctx, call)
+            outcome = await self._execute(ctx, replace(call, id=next(ids)))
             reply = outcome.output.summary if isinstance(outcome, ToolSuccess) else outcome.message
             await self._speak(ctx, reply)
             self._remember([Message("user", ctx.input), Message("assistant", reply)])
@@ -95,8 +100,9 @@ class Agent:
             if not response.tool_calls:
                 reply = response.text or GIVE_UP
                 break
-            turn_messages.append(Message("assistant", tool_calls=response.tool_calls))
-            for tool_call in response.tool_calls:
+            calls = tuple(replace(c, id=next(ids)) for c in response.tool_calls)
+            turn_messages.append(Message("assistant", tool_calls=calls))
+            for tool_call in calls:
                 outcome = await self._execute(ctx, tool_call)
                 turn_messages.append(
                     Message(

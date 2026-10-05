@@ -73,9 +73,10 @@ class FakeLLM:
             return LLMResponse(text=f"Sorry, that didn't work. {data.get('message', '')}".strip())
 
         results: list[dict[str, Any]] = data.get("results", [])
-        user = _normalise(next((m.content for m in reversed(messages) if m.role == "user"), ""))
-        find = _FIND.match(user)
-        already_opened = any(m.role == "tool" and m.name == "open_result" for m in messages)
+        last_user = max(i for i, m in enumerate(messages) if m.role == "user")
+        this_turn = messages[last_user:]  # ignore earlier turns in the history
+        find = _FIND.match(_normalise(this_turn[0].content))
+        already_opened = any(m.role == "tool" and m.name == "open_result" for m in this_turn)
 
         # Multi-step: "find X and open the first one" -> open_result(first id).
         if last.name == "find_files" and find and find["open"] and results and not already_opened:

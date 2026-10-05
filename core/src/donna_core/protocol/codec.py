@@ -14,6 +14,8 @@ import json
 from typing import Any
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic.json_schema import GenerateJsonSchema
+from pydantic_core import CoreSchema
 
 from donna_core.protocol.messages import (
     CLIENT_MESSAGE_TYPES,
@@ -76,10 +78,26 @@ def encode(message: BaseModel) -> str:
     return message.model_dump_json()
 
 
+class _NoFieldTitles(GenerateJsonSchema):
+    """Skip per-field titles so generated TypeScript stays readable."""
+
+    def field_title_should_be_set(self, schema: CoreSchema) -> bool:
+        return False
+
+
 def json_schema() -> dict[str, Any]:
-    """Combined JSON Schema for both directions, used to generate TypeScript types."""
-    client = _client_adapter.json_schema(ref_template="#/$defs/{model}")
-    server = _server_adapter.json_schema(ref_template="#/$defs/{model}")
+    """Combined JSON Schema for both directions, used to generate TypeScript types.
+
+    Serialization mode: every envelope field is required, i.e. the schema describes
+    complete messages. (The Python decoder is lenient and fills in ``turn``/``ts``.)
+    """
+    opts: dict[str, Any] = {
+        "ref_template": "#/$defs/{model}",
+        "mode": "serialization",
+        "schema_generator": _NoFieldTitles,
+    }
+    client = _client_adapter.json_schema(**opts)
+    server = _server_adapter.json_schema(**opts)
     defs: dict[str, Any] = {**client.pop("$defs", {}), **server.pop("$defs", {})}
     defs["ClientMessage"] = client
     defs["ServerMessage"] = server
