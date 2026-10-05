@@ -1,0 +1,30 @@
+{
+  "description": "Deterministic agent-loop eval. Runs against FakeLLM + mock tools; later the same cases run against the real model.",
+  "cases": [
+    {"id": "greeting", "input": "hello",
+     "route": "llm", "tools": [], "reply_contains": "Hello"},
+    {"id": "open_vscode_fast_path", "input": "open VS Code",
+     "route": "fast_path", "tools": ["open_app"], "reply_contains": "Visual Studio Code"},
+    {"id": "open_chrome_fast_path", "input": "Open Chrome.",
+     "route": "fast_path", "tools": ["open_app"], "reply_contains": "Google Chrome"},
+    {"id": "find_files", "input": "find my TrialGuard files",
+     "route": "llm", "tools": ["find_files"], "reply_contains": "I found 4 files"},
+    {"id": "find_nothing", "input": "find my tax returns",
+     "route": "llm", "tools": ["find_files"], "reply_contains": "couldn't find any files"},
+    {"id": "web_search", "input": "search the web for rust async runtimes",
+     "route": "llm", "tools": ["web_search"], "reply_contains": "rust async runtimes"},
+    {"id": "ambiguous", "input": "open it",
+     "route": "llm", "tools": [], "reply_contains": "What would you like me to open"},
+    {"id": "invalid_command", "input": "make me a sandwich",
+     "route": "llm", "tools": [], "reply_contains": "can't help"},
+    {"id": "unknown_app_falls_through_to_llm", "input": "open photoshop",
+     "route": "llm", "tools": ["open_app"], "tool_errors": ["app_not_found"],
+     "reply_contains": "photoshop"},
+    {"id": "unknown_result_id", "input": "open r_99",
+     "route": "llm", "tools": ["open_result"], "tool_errors": ["unknown_result"],
+     "reply_contains": "r_99"},
+    {"id": "multi_step_find_and_open", "input": "find my TrialGuard files and open the first one",
+     "route": "llm", "tools": ["find_files", "open_result"],
+     "reply_contains": "Opened TrialGuard_Proposal.pdf"}
+  ]
+}

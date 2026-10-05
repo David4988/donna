@@ -122,4 +122,3 @@ async def test_cancelled_turn_leaves_no_history() -> None:
     assert core.agent.history == []
     assert rec.of("turn.cancelled")
     assert core.assistant_state == "IDLE"
-

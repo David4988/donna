@@ -1,0 +1,1004 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DonnaProtocol",
+  "description": "DONNA wire protocol v1. Generated from Pydantic.",
+  "$defs": {
+    "AssistantState": {
+      "enum": [
+        "IDLE",
+        "LISTENING",
+        "THINKING",
+        "EXECUTING",
+        "SPEAKING",
+        "ERROR"
+      ],
+      "title": "AssistantState",
+      "type": "string"
+    },
+    "AssistantStateChanged": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "assistant.state",
+          "default": "assistant.state",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AssistantStatePayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "AssistantStateChanged",
+      "type": "object"
+    },
+    "AssistantStatePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/AssistantState"
+        },
+        "previous": {
+          "$ref": "#/$defs/AssistantState"
+        }
+      },
+      "required": [
+        "state",
+        "previous"
+      ],
+      "title": "AssistantStatePayload",
+      "type": "object"
+    },
+    "AssistantText": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "assistant.text",
+          "default": "assistant.text",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AssistantTextPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "AssistantText",
+      "type": "object"
+    },
+    "AssistantTextPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "final": {
+          "default": true,
+          "title": "Final",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AssistantTextPayload",
+      "type": "object"
+    },
+    "ClientInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "0",
+          "maxLength": 32,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ClientInfo",
+      "type": "object"
+    },
+    "ClientMessage": {
+      "discriminator": {
+        "mapping": {
+          "session.hello": "#/$defs/SessionHello",
+          "user.cancel": "#/$defs/UserCancel",
+          "user.text": "#/$defs/UserText"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SessionHello"
+        },
+        {
+          "$ref": "#/$defs/UserText"
+        },
+        {
+          "$ref": "#/$defs/UserCancel"
+        }
+      ]
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "error",
+          "default": "error",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ErrorPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "Error",
+      "type": "object"
+    },
+    "ErrorPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ErrorPayload",
+      "type": "object"
+    },
+    "ResultItem": {
+      "additionalProperties": false,
+      "description": "What clients and the LLM may see about a result. Never the raw path/URL.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "file",
+            "app",
+            "web"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "subtitle": {
+          "default": "",
+          "title": "Subtitle",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "title"
+      ],
+      "title": "ResultItem",
+      "type": "object"
+    },
+    "ServerMessage": {
+      "discriminator": {
+        "mapping": {
+          "assistant.state": "#/$defs/AssistantStateChanged",
+          "assistant.text": "#/$defs/AssistantText",
+          "error": "#/$defs/Error",
+          "session.ready": "#/$defs/SessionReady",
+          "tool.error": "#/$defs/ToolError",
+          "tool.request": "#/$defs/ToolRequest",
+          "tool.result": "#/$defs/ToolResult",
+          "turn.cancelled": "#/$defs/TurnCancelled",
+          "turn.completed": "#/$defs/TurnCompleted",
+          "turn.failed": "#/$defs/TurnFailed",
+          "turn.started": "#/$defs/TurnStarted"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SessionReady"
+        },
+        {
+          "$ref": "#/$defs/TurnStarted"
+        },
+        {
+          "$ref": "#/$defs/TurnCompleted"
+        },
+        {
+          "$ref": "#/$defs/TurnCancelled"
+        },
+        {
+          "$ref": "#/$defs/TurnFailed"
+        },
+        {
+          "$ref": "#/$defs/AssistantStateChanged"
+        },
+        {
+          "$ref": "#/$defs/AssistantText"
+        },
+        {
+          "$ref": "#/$defs/ToolRequest"
+        },
+        {
+          "$ref": "#/$defs/ToolResult"
+        },
+        {
+          "$ref": "#/$defs/ToolError"
+        },
+        {
+          "$ref": "#/$defs/Error"
+        }
+      ]
+    },
+    "SessionHello": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "session.hello",
+          "default": "session.hello",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/SessionHelloPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "SessionHello",
+      "type": "object"
+    },
+    "SessionHelloPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Token",
+          "type": "string"
+        },
+        "client": {
+          "$ref": "#/$defs/ClientInfo"
+        }
+      },
+      "required": [
+        "token",
+        "client"
+      ],
+      "title": "SessionHelloPayload",
+      "type": "object"
+    },
+    "SessionReady": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "session.ready",
+          "default": "session.ready",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/SessionReadyPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "SessionReady",
+      "type": "object"
+    },
+    "SessionReadyPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "session_id": {
+          "title": "Session Id",
+          "type": "string"
+        },
+        "protocol_version": {
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "server_version": {
+          "title": "Server Version",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/AssistantState"
+        },
+        "tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "session_id",
+        "protocol_version",
+        "server_version",
+        "state",
+        "tools"
+      ],
+      "title": "SessionReadyPayload",
+      "type": "object"
+    },
+    "ToolError": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool.error",
+          "default": "tool.error",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ToolErrorPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "ToolError",
+      "type": "object"
+    },
+    "ToolErrorPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "tool",
+        "code",
+        "message"
+      ],
+      "title": "ToolErrorPayload",
+      "type": "object"
+    },
+    "ToolRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool.request",
+          "default": "tool.request",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ToolRequestPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "ToolRequest",
+      "type": "object"
+    },
+    "ToolRequestPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": true,
+          "title": "Args",
+          "type": "object"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "call_id",
+        "tool",
+        "args",
+        "label"
+      ],
+      "title": "ToolRequestPayload",
+      "type": "object"
+    },
+    "ToolResult": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool.result",
+          "default": "tool.result",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ToolResultPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "ToolResult",
+      "type": "object"
+    },
+    "ToolResultPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "results": {
+          "items": {
+            "$ref": "#/$defs/ResultItem"
+          },
+          "title": "Results",
+          "type": "array"
+        }
+      },
+      "required": [
+        "call_id",
+        "tool",
+        "summary"
+      ],
+      "title": "ToolResultPayload",
+      "type": "object"
+    },
+    "TurnCancelled": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.cancelled",
+          "default": "turn.cancelled",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnCancelledPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "TurnCancelled",
+      "type": "object"
+    },
+    "TurnCancelledPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "TurnCancelledPayload",
+      "type": "object"
+    },
+    "TurnCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.completed",
+          "default": "turn.completed",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnCompletedPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "TurnCompleted",
+      "type": "object"
+    },
+    "TurnCompletedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "fast_path",
+            "llm"
+          ],
+          "title": "Route",
+          "type": "string"
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "TurnCompletedPayload",
+      "type": "object"
+    },
+    "TurnFailed": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.failed",
+          "default": "turn.failed",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnFailedPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "TurnFailed",
+      "type": "object"
+    },
+    "TurnFailedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "TurnFailedPayload",
+      "type": "object"
+    },
+    "TurnStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "turn.started",
+          "default": "turn.started",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnStartedPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "TurnStarted",
+      "type": "object"
+    },
+    "TurnStartedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "title": "Input",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "title": "TurnStartedPayload",
+      "type": "object"
+    },
+    "UserCancel": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "user.cancel",
+          "default": "user.cancel",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/UserCancelPayload"
+        }
+      },
+      "title": "UserCancel",
+      "type": "object"
+    },
+    "UserCancelPayload": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "UserCancelPayload",
+      "type": "object"
+    },
+    "UserText": {
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1,
+          "default": 1,
+          "title": "V",
+          "type": "integer"
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn"
+        },
+        "ts": {
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "user.text",
+          "default": "user.text",
+          "title": "Type",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/UserTextPayload"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "title": "UserText",
+      "type": "object"
+    },
+    "UserTextPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "UserTextPayload",
+      "type": "object"
+    }
+  }
+}
