@@ -37,6 +37,16 @@ def test_round_trip(url):
         assert ask(ws, "hi")[-1] == {"type": "assistant_message", "text": "Hello."}
 
 
+def test_the_reply_arrives_in_pieces_that_add_up_to_the_final_message(url):
+    with connect(url) as websocket:
+        messages = ask(websocket, "hi")
+
+    pieces = [m["text"] for m in messages if m["type"] == "assistant_delta"]
+    assert pieces, "no assistant_delta arrived"
+    assert "".join(pieces) == messages[-1]["text"]
+    assert sum(m["type"] in ("assistant_message", "error") for m in messages) == 1
+
+
 def test_bad_message_gets_error_and_connection_stays_open(url):
     with connect(url) as ws:
         ws.send("this is not json")

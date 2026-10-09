@@ -9,16 +9,22 @@ const BACKEND_URL = "ws://127.0.0.1:8765";
 type ServerMessage =
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: string }
+  | { type: "assistant_delta"; text: string }
   | { type: "assistant_message"; text: string }
   | { type: "error"; text: string };
 
 // One line in the conversation: something DONNA sent, or something you typed.
-type Line = ServerMessage | { type: "you"; text: string };
+// Deltas are not lines — they build up the reply below, and the
+// assistant_message that follows is what finally becomes the line.
+type Line =
+  | Exclude<ServerMessage, { type: "assistant_delta" }>
+  | { type: "you"; text: string };
 
 export default function App() {
   const [lines, setLines] = useState<Line[]>([]);
   const [connected, setConnected] = useState(false);
   const [waiting, setWaiting] = useState(false); // sent a message, no final reply yet
+  const [reply, setReply] = useState(""); // the answer so far, arriving piece by piece
   const [draft, setDraft] = useState("");
   const socket = useRef<WebSocket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -36,6 +42,15 @@ export default function App() {
 
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data) as ServerMessage;
+
+        if (message.type === "assistant_delta") {
+          setReply((old) => old + message.text);
+          return; // a piece of the answer, not a line of its own
+        }
+
+        // Anything else ends the live reply. When it's the assistant_message it
+        // holds the very same text, so clearing here cannot duplicate it.
+        setReply("");
         setLines((old) => [...old, message]);
         if (message.type === "assistant_message" || message.type === "error") {
           setWaiting(false); // that was the final reply
@@ -46,6 +61,7 @@ export default function App() {
         if (socket.current !== ws) return; // an old socket we already replaced
         setConnected(false);
         setWaiting(false);
+        setReply("");
         if (!stopped) retryTimer = window.setTimeout(connect, 2000);
       };
     }
@@ -63,7 +79,7 @@ export default function App() {
   // useEffect that returns a non-function crashes React when it runs the cleanup.
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [lines, waiting]);
+  }, [lines, waiting, reply]);
 
   function send(event: FormEvent) {
     event.preventDefault();
@@ -94,7 +110,8 @@ export default function App() {
         {lines.map((line, index) => (
           <LineView key={index} line={line} />
         ))}
-        {waiting && <p className="thinking">DONNA is thinking…</p>}
+        {reply.length > 0 && <p className="donna">{reply}</p>}
+        {waiting && reply.length === 0 && <p className="thinking">DONNA is thinking…</p>}
         <div ref={bottom} />
       </main>
 
@@ -128,5 +145,11 @@ function LineView({ line }: { line: Line }) {
       return <pre className="tool">{line.result}</pre>;
     case "error":
       return <p className="error">{line.text}</p>;
+    default: {
+      // A message type with no case above would otherwise render as nothing at
+      // all. This makes `tsc` refuse to build instead.
+      const unhandled: never = line;
+      return <p className="error">Unknown message: {JSON.stringify(unhandled)}</p>;
+    }
   }
 }

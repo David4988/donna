@@ -7,11 +7,17 @@ Every message is JSON with a "type":
     UI -> backend   user_message       {"text": "..."}
     backend -> UI   tool_call          {"name": "...", "args": {...}}
                     tool_result        {"name": "...", "result": "..."}
+                    assistant_delta    {"text": "..."}
                     assistant_message  {"text": "..."}
                     error              {"text": "..."}
 
 Rule: every user_message gets exactly ONE final reply (assistant_message or
-error). tool_call / tool_result messages may come before it.
+error). tool_call / tool_result / assistant_delta messages may come before it.
+
+assistant_delta carries the next piece of the answer as the model produces it.
+Deltas are additive and advisory: the assistant_message that follows always
+holds the complete text, so a client may ignore them and lose nothing. Any
+non-delta message ends the run of deltas before it.
 """
 
 import json

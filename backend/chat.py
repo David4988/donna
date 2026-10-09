@@ -15,8 +15,23 @@ URL = "ws://127.0.0.1:8765"
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-def show(message):
+def show(message, streaming=False):
+    """Print one message. `streaming` says a reply is already half-printed on the
+    current line; returns whether it still is."""
     kind = message["type"]
+
+    if kind == "assistant_delta":
+        if not streaming:
+            print("DONNA > ", end="")
+        # flush: stdout is block-buffered when piped, so tokens would sit unseen.
+        print(message["text"], end="", flush=True)
+        return True
+
+    if streaming:
+        print()  # finish the half-printed reply
+        if kind == "assistant_message":
+            return False  # already printed, piece by piece
+
     if kind == "tool_call":
         print(f"   [{message['name']}] {json.dumps(message['args'])}")
     elif kind == "tool_result":
@@ -25,6 +40,7 @@ def show(message):
         print(f"DONNA > {message['text']}")
     elif kind == "error":
         print(f"DONNA (error) > {message['text']}")
+    return False
 
 
 def main():
@@ -49,9 +65,10 @@ def main():
             websocket.send(json.dumps({"type": "user_message", "text": text}))
 
             # Print everything DONNA sends until her final reply.
+            streaming = False
             while True:
                 message = json.loads(websocket.recv())
-                show(message)
+                streaming = show(message, streaming)
                 if message["type"] in ("assistant_message", "error"):
                     break
 

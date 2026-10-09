@@ -96,16 +96,21 @@ Every message is JSON with a `type`.
 | UI → backend | `user_message` | `text` | `{"type": "user_message", "text": "Open VS Code"}` |
 | backend → UI | `tool_call` | `name`, `args` | `{"type": "tool_call", "name": "open_app", "args": {"app": "vscode"}}` |
 | backend → UI | `tool_result` | `name`, `result` | `{"type": "tool_result", "name": "open_app", "result": "Opened Visual Studio Code."}` |
+| backend → UI | `assistant_delta` | `text` | `{"type": "assistant_delta", "text": "VS Code "}` |
 | backend → UI | `assistant_message` | `text` | `{"type": "assistant_message", "text": "VS Code is open."}` |
 | backend → UI | `error` | `text` | `{"type": "error", "text": "Can't reach the model. Is Ollama running?"}` |
 
-**One rule:** every `user_message` gets exactly **one** final reply, either an `assistant_message` or an `error`. `tool_call` and `tool_result` messages may come before it. Clients show "thinking…" until the final reply arrives.
+**One rule:** every `user_message` gets exactly **one** final reply, either an `assistant_message` or an `error`. `tool_call`, `tool_result` and `assistant_delta` messages may come before it. Clients show "thinking…" until the first piece of the answer arrives.
 
-This table lives here and in a comment at the top of `server.py`. There are no schema files and no code generation: with five message types, a table is easier to keep correct. We'll revisit that only if the protocol grows a lot or starts breaking.
+`assistant_delta` carries the next piece of the answer as the model types it. Deltas are **additive and advisory**: the `assistant_message` that follows always holds the complete text, so a client may ignore them entirely and lose nothing. Any non-delta message ends the run of deltas before it. That is what keeps the one-final-reply rule true while the answer streams.
+
+This table lives here and in a comment at the top of `server.py`. There are no schema files and no code generation: with six message types, a table is easier to keep correct. We'll revisit that only if the protocol grows a lot or starts breaking.
 
 ## 6. Key decisions (tell me if you disagree)
 
 1. **Plain synchronous Python, no asyncio.** The `websockets` library has a threaded mode in which each connection runs top to bottom like a normal script. The trade-off: voice will need things to happen at the same time (listening while speaking, interrupting DONNA mid-sentence). That's the first feature that actually requires concurrency, so we revisit this then and not before.
+   - Streaming did **not** force that conversation, which is worth recording. The token callback runs on the connection's own thread — the whole call stack is `handle_connection → agent.handle → llm.ask → read_stream → on_delta → send`. No queue, no event loop. Voice is still the first feature that needs concurrency.
+   - The answer streams because `llm.py` reads Ollama's reply as it arrives rather than waiting for the end. The README calls this event `reply.delta`; the built protocol spells it `assistant_delta`, for the same reason `tool.start` is spelled `tool_call` — the README is the vision, this table is what exists.
 2. **Security is localhost plus an Origin check, with no tokens.**
    - The server only listens on `127.0.0.1`, so nothing on your network can reach it.
    - The realistic remaining threat is a random website in your browser connecting to localhost, which browsers allow for WebSockets. The Origin check blocks that in one line.
@@ -182,7 +187,7 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 | Projector, stereo cameras, spatial UI | Step 13 |
 | State machine (IDLE → LISTENING → THINKING → SPEAKING) | When voice or the avatar need to show states. For typed chat, "waiting for a reply" is enough. |
 | Interrupting DONNA (cancel / barge-in) | With voice; typed replies are short, so there's nothing to interrupt |
-| Streaming replies word by word | If replies feel slow, or when text-to-speech needs sentences early |
+| ~~Streaming replies word by word~~ | **Built.** The trigger ("if replies feel slow") fired: on `qwen3.5:9b` at ~12.5 tok/s a short answer meant 6 seconds of blank panel. See §6. |
 | Fast path (skip the LLM for "open X") | Only if we measure that "open X" is too slow. Adding it now would be premature optimization. |
 | Opening found files, result IDs | When we add "open that file" |
 | Everything (`es.exe`), Start Menu app index, fuzzy app names | When the folder walk or the fixed app list is too slow or too limiting |

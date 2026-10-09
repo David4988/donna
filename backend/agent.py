@@ -25,9 +25,18 @@ def handle(text, history, send):
     """Handle one user message. `send` delivers a message dict to the UI."""
     history.append({"role": "user", "content": text})
 
+    def on_delta(piece):
+        # The answer as it is typed. The assistant_message at the end still
+        # carries the whole thing, so this is extra, never a replacement.
+        send({"type": "assistant_delta", "text": piece})
+
     for _ in range(MAX_TOOL_ROUNDS):
         try:
-            reply = llm.ask([{"role": "system", "content": SYSTEM_PROMPT}, *history], tools.TOOLS)
+            reply = llm.ask(
+                [{"role": "system", "content": SYSTEM_PROMPT}, *history],
+                tools.TOOLS,
+                on_delta=on_delta,
+            )
         except llm.LLMError as error:
             send({"type": "error", "text": str(error)})
             return

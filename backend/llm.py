@@ -7,6 +7,11 @@ ask(messages, tools) returns the model's reply in the OpenAI chat format:
      "tool_calls": [{"id": ..., "function": {"name": ..., "arguments": "{...}"}}]}
                                                             the model wants a tool
 
+If on_delta is given it is called with each piece of the answer as the model
+produces it: on_delta("Hel"), on_delta("lo"), on_delta("."). The returned reply
+still holds the whole text, so a caller that ignores the pieces behaves exactly
+as it did before streaming existed.
+
 Which brain answers is chosen with the DONNA_LLM environment variable:
     DONNA_LLM=ollama  (default) the real model, running locally in Ollama
     DONNA_LLM=fake    a few keyword rules, so DONNA works without any model
@@ -23,17 +28,19 @@ import httpx
 # Check the exact model tag on your PC with `ollama list`.
 MODEL = os.environ.get("DONNA_MODEL", "qwen3.5:9b")
 URL = os.environ.get("DONNA_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
-TIMEOUT_SECONDS = 180  # a big model on a modest GPU can be slow on the first call
+# The longest DONNA waits for the NEXT token, not for the whole reply: a big model
+# on a modest GPU can be slow on the first call while it loads.
+TIMEOUT_SECONDS = 180
 
 
 class LLMError(Exception):
     """The model couldn't be reached, or sent back something we can't use."""
 
 
-def ask(messages, tools):
+def ask(messages, tools, *, on_delta=None):
     if os.environ.get("DONNA_LLM", "ollama") == "fake":
-        return fake_ask(messages, tools)
-    return ollama_ask(messages, tools)
+        return fake_ask(messages, tools, on_delta=on_delta)
+    return ollama_ask(messages, tools, on_delta=on_delta)
 
 
 def thinking_enabled():
@@ -45,8 +52,8 @@ def thinking_enabled():
     return os.environ.get("DONNA_THINK", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def ollama_ask(messages, tools):
-    body = {"model": MODEL, "messages": messages, "stream": False}
+def ollama_ask(messages, tools, *, on_delta=None):
+    body = {"model": MODEL, "messages": messages, "stream": True}
     if tools:
         body["tools"] = tools
     if not thinking_enabled():
@@ -55,9 +62,14 @@ def ollama_ask(messages, tools):
         body["reasoning_effort"] = "none"
 
     try:
-        response = httpx.post(URL, json=body, timeout=TIMEOUT_SECONDS)
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]
+        with httpx.stream("POST", URL, json=body, timeout=TIMEOUT_SECONDS) as response:
+            # A streamed response has no body loaded yet, and reading .text before
+            # it does raises a RuntimeError that no `except` below would catch. An
+            # error reply is small, so pull it in before raise_for_status needs it.
+            if response.status_code != 200:
+                response.read()
+            response.raise_for_status()
+            return read_stream(response.iter_lines(), on_delta)
     except httpx.ConnectError:
         raise LLMError(
             f"Can't reach the model at {URL}. Is Ollama running? "
@@ -72,11 +84,108 @@ def ollama_ask(messages, tools):
         raise LLMError("The model sent back something DONNA couldn't read.") from None
 
 
+def read_stream(lines, on_delta):
+    """Turn the model's stream of chunks into one reply.
+
+    Each event is a line `data: {...}`, events are separated by blank lines, and
+    the stream ends with `data: [DONE]`. A chunk is the normal reply with
+    "message" replaced by "delta":
+
+        {"choices": [{"delta": {"content": "Hel"}}]}
+        {"choices": [{"delta": {"tool_calls": [{...}]}}]}
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+
+    Only "content" and "tool_calls" are read. With DONNA_THINK=1 the model also
+    sends its private reasoning in these chunks; ignoring every other key is
+    what keeps that thinking out of DONNA's answer.
+    """
+    content = []
+    fragments = []
+    read_a_chunk = False
+
+    try:
+        for line in lines:
+            if not line.startswith("data:"):
+                continue  # the blank line between events
+            payload = line[len("data:") :].strip()
+            if payload == "[DONE]":
+                break
+            try:
+                delta = json.loads(payload)["choices"][0].get("delta") or {}
+            except (KeyError, IndexError, ValueError):
+                continue  # one chunk we can't read shouldn't cost us the reply
+            read_a_chunk = True
+
+            piece = delta.get("content") or ""
+            if piece:
+                content.append(piece)
+                if on_delta:
+                    on_delta(piece)
+            fragments.extend(delta.get("tool_calls") or [])
+    except httpx.RequestError:
+        # The pieces already sent stay sent: we can't un-say them.
+        raise LLMError("The model stopped partway through its reply.") from None
+
+    if not read_a_chunk:
+        raise LLMError("The model sent back something DONNA couldn't read.")
+
+    reply = {"role": "assistant", "content": "".join(content) or None}
+    calls = join_tool_calls(fragments)
+    if calls:
+        reply["tool_calls"] = calls
+    return reply
+
+
+def join_tool_calls(fragments):
+    """Rebuild whole tool calls from the pieces a stream sends.
+
+    Ollama sends each call complete in one fragment. Other OpenAI-compatible
+    servers (llama.cpp, LM Studio) split ONE call across fragments sharing an
+    `index`, with the arguments arriving a few characters at a time:
+
+        {"index": 0, "id": "c1", "function": {"name": "open_app", "arguments": ""}}
+        {"index": 0, "function": {"arguments": "{\"app\":"}}
+        {"index": 0, "function": {"arguments": " \"vscode\"}"}}
+
+    Both shapes work here: a fragment bringing a name the slot already has
+    starts a new call, anything else extends the call it belongs to. That also
+    keeps two calls apart when a server leaves `index` off the wire entirely.
+    """
+    calls = []
+    slots = {}  # index -> the call that index is currently filling
+
+    for fragment in fragments:
+        index = fragment.get("index", 0)
+        function = fragment.get("function") or {}
+        name = function.get("name") or ""
+        call = slots.get(index)
+
+        if call is None or (name and call["function"]["name"]):
+            call = {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
+            calls.append(call)
+            slots[index] = call
+
+        call["id"] = call["id"] or fragment.get("id") or ""
+        call["function"]["name"] = call["function"]["name"] or name
+        call["function"]["arguments"] += function.get("arguments") or ""
+
+    return calls
+
+
 # ---------------------------------------------------------------- fake brain
 
 
-def fake_ask(messages, tools):
+def fake_ask(messages, tools, *, on_delta=None):
     """Pretend to be a model using keyword rules. Same reply shape as the real one."""
+    reply = fake_reply(messages)
+    # No real tokens to drip-feed, but still stream: that way DONNA_LLM=fake
+    # exercises the same path the real model uses.
+    if on_delta and reply.get("content"):
+        on_delta(reply["content"])
+    return reply
+
+
+def fake_reply(messages):
     last = messages[-1]
 
     # A tool just ran: sum up its result in one line (the UI already shows the details).

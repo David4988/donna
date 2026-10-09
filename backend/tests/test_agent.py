@@ -8,7 +8,7 @@ def fake_model(monkeypatch, replies):
     calls = []
     replies = list(replies)
 
-    def ask(messages, tools):
+    def ask(messages, tools, *, on_delta=None):
         calls.append(messages)
         reply = replies.pop(0)
         if isinstance(reply, Exception):
@@ -23,6 +23,22 @@ def run(text, history=None):
     sent = []
     agent.handle(text, history if history is not None else [], sent.append)
     return sent
+
+
+def test_pieces_are_forwarded_before_the_final_reply(monkeypatch):
+    """The whole contract: pieces in order, then exactly one final reply."""
+
+    def ask(messages, tools, *, on_delta=None):
+        on_delta("Hel")
+        on_delta("lo.")
+        return {"role": "assistant", "content": "Hello."}
+
+    monkeypatch.setattr(llm, "ask", ask)
+    assert run("hi") == [
+        {"type": "assistant_delta", "text": "Hel"},
+        {"type": "assistant_delta", "text": "lo."},
+        {"type": "assistant_message", "text": "Hello."},
+    ]
 
 
 def test_plain_reply(monkeypatch):
