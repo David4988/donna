@@ -1,0 +1,9 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Frontend / Tauri
+node_modules/
+dist/
+target/

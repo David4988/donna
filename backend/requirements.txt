@@ -1,0 +1,4 @@
+websockets>=15,<16   # WebSocket server and client
+httpx>=0.28,<1       # HTTP calls to the LLM (Ollama)
+ddgs>=9,<10          # DuckDuckGo web search, no API key needed
+pytest>=8            # tests
