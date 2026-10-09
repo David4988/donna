@@ -124,23 +124,23 @@ This table lives here and in a comment at the top of `server.py`. There are no s
 
 ## 7. Development steps (each one ends with something you can run)
 
-| Step | Build | You can now… |
-|---|---|---|
-| 1 | Skeleton: `backend/`, `requirements.txt`, `.gitignore`, venv instructions | run `pytest` (one smoke test passes) |
-| 2 | `server.py` (echo) + `chat.py` | type "hi" in the terminal and get "You said: hi" back over the WebSocket |
-| 3 | `agent.py` with the fake brain | "Hello Donna" → "Hello." through the real message flow |
-| 4 | `llm.py` → Ollama + Qwen3.6-35B-A3B | actually chat with DONNA |
-| 5 | `open_app` + the tool loop | "Open VS Code" opens VS Code |
-| 6 | `find_files` | "Find my TrialGuard files" lists them |
-| 7 | `web_search` | "Search the web for X" summarizes the results |
-| 8 | React UI in the browser | use DONNA from a web page |
-| 9 | Tauri window | use DONNA as a desktop app |
-| 10 | Voice | push-to-talk, and DONNA talks back |
-| 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking |
-| 12 | Gestures | pinch and fist via webcam |
-| 13 | Spatial / projector | projected desk UI |
+| Step | Build | You can now… | Status |
+|---|---|---|---|
+| 1 | Skeleton: `backend/`, `requirements.txt`, `.gitignore`, venv instructions | run `pytest` (one smoke test passes) | ✅ done |
+| 2 | `server.py` (echo) + `chat.py` | type "hi" in the terminal and get "You said: hi" back over the WebSocket | ✅ done |
+| 3 | `agent.py` with the fake brain | "Hello Donna" → "Hello." through the real message flow | ✅ done |
+| 4 | `llm.py` → Ollama + Qwen3.6-35B-A3B | actually chat with DONNA | ✅ done |
+| 5 | `open_app` + the tool loop | "Open VS Code" opens VS Code | ✅ done |
+| 6 | `find_files` | "Find my TrialGuard files" lists them | ✅ done |
+| 7 | `web_search` | "Search the web for X" summarizes the results | ✅ done |
+| 8 | React UI in the browser | use DONNA from a web page | ✅ done |
+| 9 | Tauri window | use DONNA as a desktop app | ✅ done |
+| 10 | Voice | push-to-talk, and DONNA talks back | later |
+| 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking | later |
+| 12 | Gestures | pinch and fist via webcam | later |
+| 13 | Spatial / projector | projected desk UI | later |
 
-**Steps 1–9 are DONNA v1.** Steps 10–13 are deliberately not designed yet. Each gets its own short plan when we reach it, based on what v1 taught us.
+**Steps 1–9 are DONNA v1, and they are built.** Steps 10–13 are deliberately not designed yet. Each gets its own short plan when we reach it, based on what v1 taught us.
 
 I merged your "Python backend" and "WebSocket connection" steps into Step 2, because a backend you can't talk to isn't something you can run.
 
@@ -196,3 +196,48 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 This plan starts from a clean repository: only README.md was kept. An earlier, more elaborate
 skeleton was removed on purpose (it is still in git history at commit `8c0877b` if we ever want
 to look at it). We are not building on it.
+
+## 11. How to run DONNA (Steps 1–9)
+
+**Backend** (Python 3.11+):
+
+```bash
+cd backend
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt     # Windows: .venv\Scripts\pip install -r requirements.txt
+.venv/bin/pytest                              # all tests; no model, internet or Windows needed
+.venv/bin/python server.py                    # with Ollama running
+DONNA_LLM=fake .venv/bin/python server.py     # without a model (Windows PowerShell: $env:DONNA_LLM="fake")
+```
+
+**Talk to it:**
+
+```bash
+.venv/bin/python chat.py                      # terminal client (in backend/, while server.py runs)
+cd frontend && npm install && npm run dev     # browser UI at http://localhost:5173
+cd frontend && npm run tauri dev              # desktop window (needs Rust + Tauri's system packages)
+```
+
+**On your Windows PC with the real model:**
+1. Install Ollama and pull the model. Then check the exact tag with `ollama list` and set
+   `DONNA_MODEL` if it differs from `qwen3.6:35b-a3b`.
+2. Measure speed and memory first (see Step 4 notes). Developing with a smaller Qwen is fine:
+   `DONNA_MODEL=<smaller tag>`.
+3. Still to check on your PC (can't be done in the cloud):
+   - whether Qwen's "thinking" mode slows replies, and how to turn it off in Ollama;
+   - that `open_app` launches each app in the `APPS` table in `backend/tools.py`. Edit the table to match your PC.
+
+**What was verified where:**
+- In the cloud (Linux, no GPU, network limited to package registries):
+  - every test
+  - the terminal client
+  - the browser UI (headless Chromium)
+  - the Tauri window (virtual display)
+  - with the fake brain: file search for real; "open app" giving its Windows-only message; web search failing politely, because the network is blocked there
+- Only on your PC: the real model, launching apps, and live web search.
+
+**Small things that differ from the plan above:**
+- `ddgs` is a metasearch library: it tries DuckDuckGo and similar engines.
+- `open_app` launches through Windows' `start` command, with a target taken from the `APPS` table.
+- The UI doesn't use React's `<StrictMode>`. Its dev-only double mount opened and killed a
+  WebSocket on every load, which filled the backend's terminal with errors.
