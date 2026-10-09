@@ -15,6 +15,15 @@ Which brain answers is chosen with the DONNA_LLM environment variable:
 import os
 import re
 
+import httpx
+
+# The model and where it runs. Ollama, llama.cpp's llama-server and LM Studio all
+# speak this same OpenAI-style API, so switching is just a different URL/model.
+# Check the exact model tag on your PC with `ollama list`.
+MODEL = os.environ.get("DONNA_MODEL", "qwen3.6:35b-a3b")
+URL = os.environ.get("DONNA_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
+TIMEOUT_SECONDS = 180  # a big model on a modest GPU can be slow on the first call
+
 
 class LLMError(Exception):
     """The model couldn't be reached, or sent back something we can't use."""
@@ -27,7 +36,26 @@ def ask(messages, tools):
 
 
 def ollama_ask(messages, tools):
-    raise LLMError("The real model is connected in Step 4. For now, set DONNA_LLM=fake.")
+    body = {"model": MODEL, "messages": messages, "stream": False}
+    if tools:
+        body["tools"] = tools
+
+    try:
+        response = httpx.post(URL, json=body, timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]
+    except httpx.ConnectError:
+        raise LLMError(
+            f"Can't reach the model at {URL}. Is Ollama running? "
+            "(To try DONNA without a model, start the server with DONNA_LLM=fake.)"
+        ) from None
+    except httpx.TimeoutException:
+        raise LLMError("The model took too long to answer.") from None
+    except httpx.HTTPStatusError as error:
+        status = error.response.status_code
+        raise LLMError(f"The model server said {status}: {error.response.text[:200]}") from None
+    except (KeyError, IndexError, ValueError):
+        raise LLMError("The model sent back something DONNA couldn't read.") from None
 
 
 # ---------------------------------------------------------------- fake brain
