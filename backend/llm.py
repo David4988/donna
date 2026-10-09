@@ -21,7 +21,7 @@ import httpx
 # The model and where it runs. Ollama, llama.cpp's llama-server and LM Studio all
 # speak this same OpenAI-style API, so switching is just a different URL/model.
 # Check the exact model tag on your PC with `ollama list`.
-MODEL = os.environ.get("DONNA_MODEL", "qwen3.6:35b-a3b")
+MODEL = os.environ.get("DONNA_MODEL", "qwen3.5:9b")
 URL = os.environ.get("DONNA_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
 TIMEOUT_SECONDS = 180  # a big model on a modest GPU can be slow on the first call
 

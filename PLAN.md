@@ -220,7 +220,7 @@ cd frontend && npm run tauri dev              # desktop window (needs Rust + Tau
 
 **On your Windows PC with the real model:**
 1. Install Ollama and pull the model. Then check the exact tag with `ollama list` and set
-   `DONNA_MODEL` if it differs from `qwen3.6:35b-a3b`.
+   `DONNA_MODEL` if it differs from `qwen3.5:9b`.
 2. Measure speed and memory first (see Step 4 notes). Developing with a smaller Qwen is fine:
    `DONNA_MODEL=<smaller tag>`.
 3. Still to check on your PC (can't be done in the cloud):
