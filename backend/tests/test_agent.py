@@ -103,3 +103,8 @@ def test_stops_after_max_tool_rounds(monkeypatch):
 def test_fake_brain_opens_apps():
     reply = llm.fake_ask([{"role": "user", "content": "Open VS Code"}], tools=[])
     assert reply["tool_calls"][0]["function"] == {"name": "open_app", "arguments": '{"app": "VS Code"}'}
+
+
+def test_fake_brain_sums_up_tool_results():
+    result = {"role": "tool", "tool_call_id": "c1", "content": "Found 2 file(s):\na.pdf\nb.pdf"}
+    assert llm.fake_ask([result], tools=[])["content"] == "Found 2 file(s):"

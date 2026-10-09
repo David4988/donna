@@ -66,12 +66,12 @@ def fake_ask(messages, tools):
     """Pretend to be a model using keyword rules. Same reply shape as the real one."""
     last = messages[-1]
 
-    # A tool just ran: report its result.
+    # A tool just ran: sum up its result in one line (the UI already shows the details).
     if last["role"] == "tool":
-        result = last["content"]
-        if result.startswith("Error: "):
-            result = "Sorry, " + result.removeprefix("Error: ")
-        return {"role": "assistant", "content": result}
+        summary = last["content"].splitlines()[0]
+        if summary.startswith("Error: "):
+            summary = "Sorry, " + summary.removeprefix("Error: ")
+        return {"role": "assistant", "content": summary}
 
     text = last["content"].strip().rstrip(".!?")
     words = re.findall(r"[a-z0-9]+", text.lower())
