@@ -1,26 +1,9 @@
 # Python
-__pycache__/
-*.py[cod]
 .venv/
-venv/
+__pycache__/
 .pytest_cache/
 
-# Node / frontend
+# Frontend / Tauri
 node_modules/
 dist/
-
-# Tauri / Rust
 target/
-
-# Models and audio (large, local only)
-models/
-*.onnx
-*.gguf
-*.wav
-
-# Env / OS / editors
-.env
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
