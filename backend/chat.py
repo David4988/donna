@@ -10,6 +10,10 @@ from websockets.sync.client import connect
 
 URL = "ws://127.0.0.1:8765"
 
+# Windows consoles default to a legacy codepage, but web results arrive in any
+# alphabet, so printing them would raise UnicodeEncodeError.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 def show(message):
     kind = message["type"]

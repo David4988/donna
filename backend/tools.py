@@ -63,7 +63,14 @@ def open_app(app):
 # ---------------------------------------------------------------- find_files
 
 # Read-only: returns file names and folders, never file contents.
-SEARCH_FOLDERS = [Path.home() / "Desktop", Path.home() / "Documents", Path.home() / "Downloads"]
+# Windows often redirects Desktop and Documents into OneDrive, so look in both
+# places and keep only the folders that actually exist on this PC.
+SEARCH_FOLDERS = [
+    folder
+    for base in (Path.home(), Path.home() / "OneDrive")
+    for folder in (base / "Desktop", base / "Documents", base / "Downloads")
+    if folder.is_dir()
+]
 SKIP_FOLDERS = {"node_modules", "__pycache__", "venv", "AppData"}  # plus any hidden ".folder"
 IGNORED_WORDS = {"my", "the", "all", "file", "files"}  # "find my TrialGuard files" -> "trialguard"
 MAX_RESULTS = 10
@@ -84,7 +91,7 @@ def find_files(query):
                     matches.append(Path(current) / filename)
 
     if not matches:
-        places = ", ".join(folder.name for folder in SEARCH_FOLDERS)
+        places = ", ".join(dict.fromkeys(folder.name for folder in SEARCH_FOLDERS))
         return f"No files matching '{query}' in {places}."
 
     matches.sort(key=modified_time, reverse=True)  # newest first

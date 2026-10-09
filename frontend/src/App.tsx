@@ -59,7 +59,11 @@ export default function App() {
   }, []);
 
   // Keep the newest line in view.
-  useEffect(() => bottom.current?.scrollIntoView({ block: "end" }), [lines, waiting]);
+  // The braces matter: scrollIntoView returns a Promise in current browsers, and a
+  // useEffect that returns a non-function crashes React when it runs the cleanup.
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ block: "end" });
+  }, [lines, waiting]);
 
   function send(event: FormEvent) {
     event.preventDefault();
