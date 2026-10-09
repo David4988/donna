@@ -224,7 +224,8 @@ cd frontend && npm run tauri dev              # desktop window (needs Rust + Tau
 2. Measure speed and memory first (see Step 4 notes). Developing with a smaller Qwen is fine:
    `DONNA_MODEL=<smaller tag>`.
 3. Still to check on your PC (can't be done in the cloud):
-   - whether Qwen's "thinking" mode slows replies, and how to turn it off in Ollama;
+   - ~~whether Qwen's "thinking" mode slows replies~~ it does: ~3x the tokens for a short
+     answer. DONNA now sends `reasoning_effort: "none"`; set `DONNA_THINK=1` to re-enable it;
    - that `open_app` launches each app in the `APPS` table in `backend/tools.py`. Edit the table to match your PC.
 
 **What was verified where:**

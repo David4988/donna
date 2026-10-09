@@ -36,10 +36,23 @@ def ask(messages, tools):
     return ollama_ask(messages, tools)
 
 
+def thinking_enabled():
+    """Qwen reasons before answering, which roughly triples the tokens a short
+    reply costs (measured on an RX 580: 15.2s vs 4.9s for the same answer).
+    DONNA's replies are meant to be short, so thinking is off unless you ask:
+    set DONNA_THINK=1 for harder, multi-step requests.
+    """
+    return os.environ.get("DONNA_THINK", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def ollama_ask(messages, tools):
     body = {"model": MODEL, "messages": messages, "stream": False}
     if tools:
         body["tools"] = tools
+    if not thinking_enabled():
+        # This endpoint spells it "reasoning_effort". Ollama's native
+        # {"think": false} is silently ignored here, so don't use it.
+        body["reasoning_effort"] = "none"
 
     try:
         response = httpx.post(URL, json=body, timeout=TIMEOUT_SECONDS)

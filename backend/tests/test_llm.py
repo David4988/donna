@@ -53,6 +53,20 @@ def test_unexpected_response(monkeypatch):
         llm.ollama_ask([{"role": "user", "content": "hello"}], [])
 
 
+def test_thinking_is_off_by_default(monkeypatch):
+    monkeypatch.delenv("DONNA_THINK", raising=False)
+    sent = fake_post(monkeypatch, {"choices": [{"message": {"role": "assistant", "content": "Hi"}}]})
+    llm.ollama_ask([{"role": "user", "content": "hello"}], [])
+    assert sent["body"]["reasoning_effort"] == "none"
+
+
+def test_thinking_can_be_turned_on(monkeypatch):
+    monkeypatch.setenv("DONNA_THINK", "1")
+    sent = fake_post(monkeypatch, {"choices": [{"message": {"role": "assistant", "content": "Hi"}}]})
+    llm.ollama_ask([{"role": "user", "content": "hello"}], [])
+    assert "reasoning_effort" not in sent["body"]
+
+
 def test_ask_uses_fake_brain_when_asked(monkeypatch):
     monkeypatch.setenv("DONNA_LLM", "fake")
     assert llm.ask([{"role": "user", "content": "hi"}], [])["content"] == "Hello."
