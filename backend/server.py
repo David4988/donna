@@ -19,6 +19,8 @@ import logging
 
 from websockets.sync.server import serve
 
+import agent
+
 HOST = "127.0.0.1"  # only programs on this computer can connect
 PORT = 8765
 
@@ -33,11 +35,6 @@ ALLOWED_ORIGINS = [
     "http://tauri.localhost",  # Tauri app window (Windows)
     "https://tauri.localhost",
 ]
-
-
-def reply_to(text, history, send):
-    """Step 2: just echo. The agent takes over in Step 3."""
-    send({"type": "assistant_message", "text": f"You said: {text}"})
 
 
 def is_user_message(message):
@@ -67,7 +64,7 @@ def handle_connection(websocket):
             send({"type": "error", "text": 'Expected {"type": "user_message", "text": "..."}'})
             continue
 
-        reply_to(message["text"].strip(), history, send)
+        agent.handle(message["text"].strip(), history, send)
 
 
 def make_server(port=PORT):

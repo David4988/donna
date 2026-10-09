@@ -9,8 +9,9 @@ import server
 
 
 @pytest.fixture
-def url():
-    """Start the real server on a free port in a background thread."""
+def url(monkeypatch):
+    """Start the real server on a free port in a background thread (fake brain)."""
+    monkeypatch.setenv("DONNA_LLM", "fake")
     srv = server.make_server(port=0)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -33,7 +34,7 @@ def ask(websocket, text):
 
 def test_round_trip(url):
     with connect(url) as ws:
-        assert ask(ws, "hi")[-1] == {"type": "assistant_message", "text": "You said: hi"}
+        assert ask(ws, "hi")[-1] == {"type": "assistant_message", "text": "Hello."}
 
 
 def test_bad_message_gets_error_and_connection_stays_open(url):
