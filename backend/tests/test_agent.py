@@ -1,5 +1,6 @@
 import agent
 import llm
+import tools
 
 
 def fake_model(monkeypatch, replies):
@@ -40,3 +41,65 @@ def test_model_unreachable_gives_error(monkeypatch):
 def test_fake_brain_says_hello():
     reply = llm.fake_ask([{"role": "user", "content": "Hello Donna!"}], tools=[])
     assert reply["content"] == "Hello."
+
+
+def tool_call(name, arguments, call_id="c1"):
+    return {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{"id": call_id, "function": {"name": name, "arguments": arguments}}],
+    }
+
+
+def test_tool_call_then_reply(monkeypatch):
+    calls = fake_model(
+        monkeypatch,
+        [
+            tool_call("open_app", '{"app": "vscode"}'),
+            {"role": "assistant", "content": "VS Code is open."},
+        ],
+    )
+    monkeypatch.setitem(tools.FUNCTIONS, "open_app", lambda app: f"Opened {app}.")
+
+    history = []
+    assert run("Open VS Code", history) == [
+        {"type": "tool_call", "name": "open_app", "args": {"app": "vscode"}},
+        {"type": "tool_result", "name": "open_app", "result": "Opened vscode."},
+        {"type": "assistant_message", "text": "VS Code is open."},
+    ]
+    # The second LLM call saw the tool result, linked to the request by id.
+    assert calls[1][-1] == {"role": "tool", "tool_call_id": "c1", "content": "Opened vscode."}
+    assert [m["role"] for m in history] == ["user", "assistant", "tool", "assistant"]
+
+
+def test_unknown_tool_error_goes_back_to_the_llm(monkeypatch):
+    calls = fake_model(
+        monkeypatch,
+        [tool_call("delete_everything", "{}"), {"role": "assistant", "content": "I can't do that."}],
+    )
+    sent = run("delete my files")
+    assert sent[1]["result"] == "Error: there is no tool called 'delete_everything'."
+    assert sent[-1] == {"type": "assistant_message", "text": "I can't do that."}
+    assert calls[1][-1]["content"].startswith("Error:")
+
+
+def test_invalid_json_arguments(monkeypatch):
+    fake_model(
+        monkeypatch,
+        [tool_call("open_app", "{not json"), {"role": "assistant", "content": "Oops."}],
+    )
+    sent = run("open something")
+    assert sent[0] == {"type": "tool_call", "name": "open_app", "args": {}}
+    assert sent[1]["result"].startswith("Error:")
+
+
+def test_stops_after_max_tool_rounds(monkeypatch):
+    fake_model(monkeypatch, [tool_call("no_such_tool", "{}")] * agent.MAX_TOOL_ROUNDS)
+    sent = run("loop forever")
+    assert sum(m["type"] == "tool_call" for m in sent) == agent.MAX_TOOL_ROUNDS
+    assert sent[-1] == {"type": "assistant_message", "text": "Sorry, I got stuck trying to do that."}
+
+
+def test_fake_brain_opens_apps():
+    reply = llm.fake_ask([{"role": "user", "content": "Open VS Code"}], tools=[])
+    assert reply["tool_calls"][0]["function"] == {"name": "open_app", "arguments": '{"app": "VS Code"}'}

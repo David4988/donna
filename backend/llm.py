@@ -12,6 +12,7 @@ Which brain answers is chosen with the DONNA_LLM environment variable:
     DONNA_LLM=fake    a few keyword rules, so DONNA works without any model
 """
 
+import json
 import os
 import re
 
@@ -63,12 +64,35 @@ def ollama_ask(messages, tools):
 
 def fake_ask(messages, tools):
     """Pretend to be a model using keyword rules. Same reply shape as the real one."""
-    words = re.findall(r"[a-z0-9]+", messages[-1]["content"].lower())
+    last = messages[-1]
+
+    # A tool just ran: report its result.
+    if last["role"] == "tool":
+        result = last["content"]
+        if result.startswith("Error: "):
+            result = "Sorry, " + result.removeprefix("Error: ")
+        return {"role": "assistant", "content": result}
+
+    text = last["content"].strip().rstrip(".!?")
+    words = re.findall(r"[a-z0-9]+", text.lower())
 
     if words and words[0] in ("hello", "hi", "hey"):
         return {"role": "assistant", "content": "Hello."}
+    if words and words[0] in ("open", "launch", "start"):
+        return _tool_call("open_app", app=text.split(maxsplit=1)[1] if len(words) > 1 else "")
 
     return {
         "role": "assistant",
-        "content": "I'm DONNA's offline brain, so I only understand a few things, like 'hello'.",
+        "content": "I'm DONNA's offline brain, so I only understand a few things, "
+        "like 'hello' and 'open <app>'.",
     }
+
+
+def _tool_call(name, **args):
+    """A reply asking for a tool, in the same format a real model uses."""
+    call = {
+        "id": f"call_{name}",
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(args)},
+    }
+    return {"role": "assistant", "content": None, "tool_calls": [call]}
