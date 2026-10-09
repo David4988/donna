@@ -80,11 +80,13 @@ def fake_ask(messages, tools):
         return {"role": "assistant", "content": "Hello."}
     if words and words[0] in ("open", "launch", "start"):
         return _tool_call("open_app", app=text.split(maxsplit=1)[1] if len(words) > 1 else "")
+    if words and words[0] in ("find", "locate"):
+        return _tool_call("find_files", query=" ".join(text.split()[1:]))
 
     return {
         "role": "assistant",
         "content": "I'm DONNA's offline brain, so I only understand a few things, "
-        "like 'hello' and 'open <app>'.",
+        "like 'hello', 'open <app>' and 'find <files>'.",
     }
 
 

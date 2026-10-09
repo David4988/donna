@@ -1,3 +1,4 @@
+import os
 import subprocess
 
 import pytest
@@ -47,3 +48,62 @@ def test_run_tool_unknown_tool():
 def test_run_tool_bad_arguments(launched, args):
     assert tools.run_tool("open_app", args).startswith("Error:")
     assert launched == []
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A fake home folder with some files in it."""
+    files = {
+        "Documents/TrialGuard/TrialGuard_Proposal.pdf": 300,
+        "Documents/notes/trialguard-notes.md": 200,
+        "Downloads/TrialGuard_Setup.exe": 100,
+        "Downloads/holiday.jpg": 100,
+        "Documents/code/node_modules/trialguard.js": 400,  # skipped folder
+        "Desktop/.secret/trialguard.txt": 400,  # hidden folder
+    }
+    for name, age in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x")
+        os.utime(path, (1_000_000 - age, 1_000_000 - age))  # bigger age = older
+    monkeypatch.setattr(
+        tools, "SEARCH_FOLDERS", [tmp_path / "Desktop", tmp_path / "Documents", tmp_path / "Downloads"]
+    )
+    return tmp_path
+
+
+def test_find_files_newest_first(home):
+    result = tools.find_files("my TrialGuard files")
+    lines = result.splitlines()
+    assert lines[0] == "Found 3 file(s) matching 'my TrialGuard files':"
+    assert [line.split("  ")[0] for line in lines[1:]] == [
+        "TrialGuard_Setup.exe",
+        "trialguard-notes.md",
+        "TrialGuard_Proposal.pdf",
+    ]
+
+
+def test_find_files_skips_node_modules_and_hidden_folders(home):
+    result = tools.find_files("trialguard")
+    assert "node_modules" not in result
+    assert ".secret" not in result
+
+
+def test_find_files_all_words_must_match(home):
+    assert "TrialGuard_Proposal.pdf" in tools.find_files("trialguard proposal")
+    assert "notes" not in tools.find_files("trialguard proposal")
+
+
+def test_find_files_limit(home, monkeypatch):
+    monkeypatch.setattr(tools, "MAX_RESULTS", 2)
+    result = tools.find_files("trialguard")
+    assert "showing the newest 2" in result
+    assert len(result.splitlines()) == 3
+
+
+def test_find_files_nothing_found(home):
+    assert tools.find_files("tax return").startswith("No files matching")
+
+
+def test_find_files_needs_a_query(home):
+    assert tools.find_files("my files").startswith("Error:")

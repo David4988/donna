@@ -8,8 +8,10 @@ If it isn't in this file, the LLM can't do it. There is deliberately no
 - run_tool() is the only way the agent runs a tool.
 """
 
+import os
 import subprocess
 import sys
+from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -56,6 +58,52 @@ def open_app(app):
     return f"Opened {name}."
 
 
+# ---------------------------------------------------------------- find_files
+
+# Read-only: returns file names and folders, never file contents.
+SEARCH_FOLDERS = [Path.home() / "Desktop", Path.home() / "Documents", Path.home() / "Downloads"]
+SKIP_FOLDERS = {"node_modules", "__pycache__", "venv", "AppData"}  # plus any hidden ".folder"
+IGNORED_WORDS = {"my", "the", "all", "file", "files"}  # "find my TrialGuard files" -> "trialguard"
+MAX_RESULTS = 10
+
+
+def find_files(query):
+    words = [w for w in query.lower().split() if w not in IGNORED_WORDS]
+    if not words:
+        return "Error: tell me what to search for."
+
+    matches = []
+    for folder in SEARCH_FOLDERS:
+        for current, subfolders, filenames in os.walk(folder):
+            # Editing `subfolders` in place tells os.walk not to go into those folders.
+            subfolders[:] = [name for name in subfolders if not skip_folder(name)]
+            for filename in filenames:
+                if all(word in filename.lower() for word in words):
+                    matches.append(Path(current) / filename)
+
+    if not matches:
+        places = ", ".join(folder.name for folder in SEARCH_FOLDERS)
+        return f"No files matching '{query}' in {places}."
+
+    matches.sort(key=modified_time, reverse=True)  # newest first
+    shown = matches[:MAX_RESULTS]
+    header = f"Found {len(matches)} file(s) matching '{query}'"
+    if len(matches) > len(shown):
+        header += f", showing the newest {len(shown)}"
+    return header + ":\n" + "\n".join(f"{path.name}  ({path.parent})" for path in shown)
+
+
+def skip_folder(name):
+    return name in SKIP_FOLDERS or name.startswith(".")
+
+
+def modified_time(path):
+    try:
+        return path.stat().st_mtime
+    except OSError:  # e.g. a broken shortcut
+        return 0
+
+
 # ---------------------------------------------------------------- for the LLM
 
 TOOLS = [
@@ -73,9 +121,26 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_files",
+            "description": "Search the user's Desktop, Documents and Downloads by file name.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Words that appear in the file name, e.g. 'trialguard'.",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
-FUNCTIONS = {"open_app": open_app}
+FUNCTIONS = {"open_app": open_app, "find_files": find_files}
 
 
 def run_tool(name, args):
