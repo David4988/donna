@@ -107,3 +107,42 @@ def test_find_files_nothing_found(home):
 
 def test_find_files_needs_a_query(home):
     assert tools.find_files("my files").startswith("Error:")
+
+
+class FakeDDGS:
+    """Stands in for the real search client, so tests don't need the internet."""
+
+    results = [
+        {"title": "Tauri 2.0", "href": "https://v2.tauri.app", "body": "Build desktop apps."},
+        {"title": "Tauri on GitHub", "href": "https://github.com/tauri-apps", "body": "Source."},
+    ]
+    error = None
+
+    def __init__(self, timeout):
+        pass
+
+    def text(self, query, max_results):
+        if self.error:
+            raise self.error
+        return self.results[:max_results]
+
+
+def test_web_search_formats_results(monkeypatch):
+    monkeypatch.setattr(tools, "DDGS", FakeDDGS)
+    assert tools.web_search("tauri") == (
+        "Web results for 'tauri':\n"
+        "1. Tauri 2.0\n   https://v2.tauri.app\n   Build desktop apps.\n"
+        "2. Tauri on GitHub\n   https://github.com/tauri-apps\n   Source."
+    )
+
+
+def test_web_search_network_error(monkeypatch):
+    monkeypatch.setattr(FakeDDGS, "error", RuntimeError("no internet"))
+    monkeypatch.setattr(tools, "DDGS", FakeDDGS)
+    assert tools.web_search("tauri") == "Error: the web search failed (no internet)."
+
+
+def test_web_search_no_results(monkeypatch):
+    monkeypatch.setattr(FakeDDGS, "results", [])
+    monkeypatch.setattr(tools, "DDGS", FakeDDGS)
+    assert tools.web_search("xyzzy") == "No web results for 'xyzzy'."
