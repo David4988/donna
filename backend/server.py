@@ -17,6 +17,7 @@ error). tool_call / tool_result messages may come before it.
 import json
 import logging
 
+from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
 import agent
@@ -53,18 +54,21 @@ def handle_connection(websocket):
     def send(message):
         websocket.send(json.dumps(message))
 
-    for raw in websocket:  # loops until the client disconnects
-        try:
-            message = json.loads(raw)
-        except json.JSONDecodeError:
-            send({"type": "error", "text": "That wasn't valid JSON."})
-            continue
+    try:
+        for raw in websocket:  # loops until the client disconnects
+            try:
+                message = json.loads(raw)
+            except json.JSONDecodeError:
+                send({"type": "error", "text": "That wasn't valid JSON."})
+                continue
 
-        if not is_user_message(message):
-            send({"type": "error", "text": 'Expected {"type": "user_message", "text": "..."}'})
-            continue
+            if not is_user_message(message):
+                send({"type": "error", "text": 'Expected {"type": "user_message", "text": "..."}'})
+                continue
 
-        agent.handle(message["text"].strip(), history, send)
+            agent.handle(message["text"].strip(), history, send)
+    except ConnectionClosed:
+        pass  # the client vanished without saying goodbye (app closed, network dropped)
 
 
 def make_server(port=PORT):

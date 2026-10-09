@@ -68,7 +68,7 @@ def fake_ask(messages, tools):
 
     # A tool just ran: sum up its result in one line (the UI already shows the details).
     if last["role"] == "tool":
-        summary = last["content"].splitlines()[0]
+        summary = last["content"].splitlines()[0].rstrip(":")
         if summary.startswith("Error: "):
             summary = "Sorry, " + summary.removeprefix("Error: ")
         return {"role": "assistant", "content": summary}

@@ -107,4 +107,4 @@ def test_fake_brain_opens_apps():
 
 def test_fake_brain_sums_up_tool_results():
     result = {"role": "tool", "tool_call_id": "c1", "content": "Found 2 file(s):\na.pdf\nb.pdf"}
-    assert llm.fake_ask([result], tools=[])["content"] == "Found 2 file(s):"
+    assert llm.fake_ask([result], tools=[])["content"] == "Found 2 file(s)"
