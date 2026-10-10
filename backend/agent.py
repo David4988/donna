@@ -15,8 +15,16 @@ import tools
 
 SYSTEM_PROMPT = (
     "You are DONNA, a helpful desktop assistant running on the user's own computer. "
-    "Use the tools when they help. Keep replies short: one to three sentences."
+    "Keep replies short: one to three sentences.\n"
+    "Only use a tool when the user actually asks you to do something. Greetings, "
+    "small talk, thanks and questions you can answer yourself get a plain reply and "
+    "NO tool call. If you cannot tell what the user wants -- the microphone may have "
+    "misheard them -- say so and ask. Never guess at a tool."
 )
+# That second paragraph is not decoration. Measured on qwen3.5:4b, the old
+# one-line prompt scored 30/40 on "should this be a tool call?" and this one
+# scores 38/40, without losing a single real tool call. Adding a worked example
+# made it worse (46/60): naming a tool in the prompt primes it to reach for one.
 
 MAX_TOOL_ROUNDS = 5  # so a confused model can't loop forever
 

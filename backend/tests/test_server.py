@@ -72,17 +72,26 @@ def say(websocket, text):
 
 def test_round_trip(url):
     with connect(url) as ws:
-        assert ask(ws, "hi")[-1] == {"type": "assistant_message", "text": "Hello."}
+        assert ask(ws, "hi")[-1] == {
+            "type": "assistant_message",
+            "text": "Hello. What can I do for you?",
+        }
+
+
+def test_a_real_question_reaches_the_brain(url):
+    """"hi" is answered without the model, so this is the one that proves the pipe."""
+    with connect(url) as ws:
+        reply = ask(ws, "what time is it")[-1]
+    assert reply["type"] == "assistant_message"
+    assert reply["text"].startswith("I'm DONNA's offline brain")
 
 
 def test_a_spoken_utterance_wakes_her_and_gets_a_spoken_reply(url):
     with connect(url) as ws:
-        messages, audio = say(ws, "Hey Donna, hi")
+        messages, audio = say(ws, "Hey Donna, what time is it")
     assert {"type": "state", "name": "awake"} in messages
-    assert {"type": "transcript", "text": "Hey Donna, hi"} in messages
-    assert [m for m in messages if m["type"] == "assistant_message"] == [
-        {"type": "assistant_message", "text": "Hello."}
-    ]
+    assert {"type": "transcript", "text": "Hey Donna, what time is it"} in messages
+    assert [m["type"] for m in messages].count("assistant_message") == 1
     assert audio, "she replied, but said nothing out loud"
     assert all(len(frame) % 2 == 0 for frame in audio), "PCM16 frames are even-length"
 
@@ -110,7 +119,7 @@ def test_a_junk_binary_frame_does_not_kill_the_connection(url):
 
 def test_the_reply_arrives_in_pieces_that_add_up_to_the_final_message(url):
     with connect(url) as websocket:
-        messages = ask(websocket, "hi")
+        messages = ask(websocket, "what time is it")
 
     pieces = [m["text"] for m in messages if m["type"] == "assistant_delta"]
     assert pieces, "no assistant_delta arrived"

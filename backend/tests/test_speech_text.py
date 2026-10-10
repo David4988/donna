@@ -128,3 +128,25 @@ def test_what_you_actually_say_is_not_an_echo():
     assert not speech_text.echoes("Notepad is open.", "Donna, find my files")
     assert not speech_text.echoes("Notepad is open.", "thanks")
     assert not speech_text.echoes("", "Donna, hello")
+
+
+# ---------------------------------------------------------------- is_small_talk
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Hello", "hello.", "Hi there", "Hey", "Thanks!", "thank you", "Good morning",
+     "Donna", "hello again", "yo", "", "   "],
+)
+def test_a_greeting_never_reaches_the_model(text):
+    """qwen3.5:4b opens a random app when handed a contentless utterance."""
+    assert speech_text.is_small_talk(text) or not text.strip()
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["open notepad", "find my notion files", "what time is it",
+     "hello, open notepad", "thanks, now find my files", "search the web for tauri"],
+)
+def test_a_real_request_is_not_small_talk(text):
+    assert not speech_text.is_small_talk(text)

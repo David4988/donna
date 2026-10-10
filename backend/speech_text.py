@@ -32,6 +32,14 @@ GREETINGS = frozenset({"hey", "hi", "hello", "ok", "okay", "yo", "um", "uh", "so
 
 MAX_SENTENCE_CHARS = 240  # a reply with no punctuation still has to get spoken
 
+# Things people say that aren't asking for anything. An open mic produces a lot
+# of these -- a greeting, an acknowledgement, or a half-heard "May Donna" that
+# was really "Hey Donna".
+PLEASANTRIES = GREETINGS | {
+    "hello", "hiya", "morning", "afternoon", "evening", "good", "thanks",
+    "thank", "you", "cheers", "there", "again", "donna", "please", "well",
+}
+
 TERMINATORS = ".!?"
 NOT_THE_END = frozenset({"mr", "mrs", "ms", "dr", "prof", "sr", "jr", "vs", "e.g", "i.e"})
 
@@ -61,6 +69,20 @@ def wake(heard):
                 return None  # "...about Donna" is talking about her, not to her
             return " ".join(words[position + 1 :]).lstrip(",.;: ").strip()
     return None
+
+
+def is_small_talk(text):
+    """Is this a greeting rather than a request?
+
+    Worth catching before the model sees it. Measured on qwen3.5:4b: given a
+    contentless utterance like "Hello." with the tools attached, it opens a
+    random application most of the time -- once passing the tool's own name as
+    the app. It handles real requests and real questions perfectly; it is the
+    empty ones it can't leave alone. An open mic produces a lot of empty ones.
+    """
+    words = [bare(word) for word in text.split()]
+    words = [word for word in words if word]
+    return bool(words) and all(word in PLEASANTRIES for word in words)
 
 
 # ---------------------------------------------------------------- sentences

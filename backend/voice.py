@@ -93,6 +93,11 @@ class Session:
     # ------------------------------------------------------------ a turn
 
     def _run(self, command):
+        if speech_text.is_small_talk(command):
+            # Don't hand "Hello." to the model: with the tools attached it
+            # opens something at random rather than just saying hello back.
+            return self._answer("Hello. What can I do for you?")
+
         self._set_state(SPEAKING)
         reply = _ReplyVoice(self._send, self._speak)
         try:
