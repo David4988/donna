@@ -22,12 +22,20 @@ SAMPLE_RATE = 16000  # what the window sends, and what Whisper wants
 MIN_SECONDS = 0.3  # shorter than this is a cough, a click or a door
 MODEL = os.environ.get("DONNA_WHISPER_MODEL", "base.en")
 
+# A second, smaller model for the words shown while you are still speaking.
+# They are thrown away the moment the real transcript arrives, so accuracy
+# barely matters and latency is everything. Measured on growing prefixes of a
+# 4s utterance, tiny.en took a flat 0.23-0.27s where base.en took 0.49-0.91s --
+# and tiny.en's text was BETTER on short audio ("Hey Jarvis" against base.en's
+# "K Jarvis"). Set it to "" to turn live words off.
+PARTIAL_MODEL = os.environ.get("DONNA_WHISPER_PARTIAL_MODEL", "tiny.en")
+
 # Nudges Whisper towards spelling the summons the way speech_text.JARVIS expects.
 # Measured on this PC: base.en transcribes a 3.5s utterance in 0.44s, against
 # 0.21s for tiny.en and 1.32s for small.en, all three word-perfect.
 NAME_HINT = "Hey Jarvis."
 
-_model = None
+_models = {}  # name -> the loaded model
 
 
 class SttError(Exception):
@@ -38,7 +46,16 @@ def transcribe(pcm):
     """Turn one spoken utterance into text. Never raises on bad audio."""
     if os.environ.get("DONNA_STT", "whisper") == "fake":
         return pcm.decode("utf-8", "ignore").strip()
-    return whisper_transcribe(pcm)
+    return whisper_transcribe(pcm, MODEL)
+
+
+def transcribe_partial(pcm):
+    """A rough guess at what you are saying, while you are still saying it."""
+    if not PARTIAL_MODEL:
+        return ""
+    if os.environ.get("DONNA_STT", "whisper") == "fake":
+        return pcm.decode("utf-8", "ignore").strip()
+    return whisper_transcribe(pcm, PARTIAL_MODEL)
 
 
 def warm():
@@ -51,13 +68,16 @@ def warm():
         return
     logging.info("Loading Whisper %r (the first run downloads ~75 MB)...", MODEL)
     load()
+    if PARTIAL_MODEL and PARTIAL_MODEL != MODEL:
+        logging.info("Loading Whisper %r, for the words shown as you speak...", PARTIAL_MODEL)
+        load(PARTIAL_MODEL)
     logging.info("DONNA can hear you.")
 
 
-def load():
-    global _model
-    if _model is not None:
-        return _model
+def load(name=None):
+    name = name or MODEL
+    if name in _models:
+        return _models[name]
     try:
         from faster_whisper import WhisperModel
     except ImportError:
@@ -66,13 +86,13 @@ def load():
             "Run  pip install -r requirements-voice.txt"
         ) from None
     try:
-        _model = WhisperModel(MODEL, device="cpu", compute_type="int8")
+        _models[name] = WhisperModel(name, device="cpu", compute_type="int8")
     except Exception as error:
-        raise SttError(f"DONNA couldn't load the {MODEL!r} speech model: {error}") from None
-    return _model
+        raise SttError(f"DONNA couldn't load the {name!r} speech model: {error}") from None
+    return _models[name]
 
 
-def whisper_transcribe(pcm):
+def whisper_transcribe(pcm, name):
     import numpy
 
     try:
@@ -82,7 +102,7 @@ def whisper_transcribe(pcm):
     if len(samples) < MIN_SECONDS * SAMPLE_RATE:
         return ""
 
-    segments, _ = load().transcribe(
+    segments, _ = load(name).transcribe(
         samples,
         language="en",
         beam_size=1,  # speed over the last fraction of accuracy

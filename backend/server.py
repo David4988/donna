@@ -6,6 +6,10 @@ Binary means audio, JSON means everything else. A binary frame going up is one
 whole utterance you just spoke (PCM16 mono 16 kHz); a binary frame coming down
 is one sentence of her reply (PCM16 mono 22050 Hz).
 
+A binary frame going up that starts with b"DONNAPRT" is the utterance SO FAR,
+sent while you are still speaking, so the words can appear on screen. It
+starts no turn and never reaches the agent.
+
 Every other message is JSON with a "type":
 
     UI -> backend   user_message       {"text": "..."}
@@ -13,6 +17,7 @@ Every other message is JSON with a "type":
     backend -> UI   transcript         {"text": "..."}
                     state              {"name": "..."}
                     settings           {"settings": {...}, "voices": [...]}
+                    partial_transcript {"text": "..."}
                     tool_call          {"name": "...", "args": {...}}
                     tool_result        {"name": "...", "result": "..."}
                     assistant_delta    {"text": "..."}
@@ -33,6 +38,10 @@ non-delta message ends the run of deltas before it.
 state is "asleep", "awake" or "speaking" for the session, plus "deaf" or
 "mute" sent once if she loses the ability to hear or speak. Those ride this
 channel rather than `error` because an error would be a second final reply.
+
+partial_transcript is what she thinks you are saying so far. Each one
+REPLACES the previous one -- unlike assistant_delta, they do not add up -- and
+the transcript that follows is the authority and may well contradict them.
 
 settings_change is an event (the user moved a control, and may send only the
 part that changed); settings is the state, sent once when you connect and
@@ -72,6 +81,13 @@ ALLOWED_ORIGINS = [
 # connection, so the limit sits above anything voice.py will accept.
 MAX_FRAME_BYTES = 2**21
 
+# Audio for the words shown while you are still speaking carries this in
+# front. Only partials are marked, so a finished utterance stays byte for
+# byte what it always was -- which is what keeps DONNA_STT=fake, chat.py's
+# /say and the socket tests working untouched. Eight bytes, so the PCM16
+# behind it stays two-byte aligned.
+PARTIAL_PREFIX = b"DONNAPRT"
+
 
 def is_settings_change(message):
     return (
@@ -104,7 +120,10 @@ def handle_connection(websocket):
     try:
         for raw in websocket:  # loops until the client disconnects
             if isinstance(raw, bytes):
-                session.on_audio(raw)  # one binary frame is one whole utterance
+                if raw.startswith(PARTIAL_PREFIX):
+                    session.on_partial(raw[len(PARTIAL_PREFIX) :])
+                else:
+                    session.on_audio(raw)  # one binary frame is one whole utterance
                 continue
 
             try:

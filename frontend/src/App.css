@@ -35,3 +35,11 @@ form { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #2a2a3
 input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2a31; background: var(--panel); color: var(--text); font: inherit; }
 button { padding: 0 18px; border-radius: 8px; border: none; background: var(--gold); color: #1d1500; font: inherit; font-weight: 600; cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: default; }
+.partial { opacity: 0.55; font-style: italic; }
+button.ghost { background: none; color: var(--muted); padding: 0 6px; font-weight: 400; font-size: 12px; }
+.settings { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid #2a2a31; }
+.settings label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.settings .hint { font-size: 12px; }
+select { padding: 6px 8px; border-radius: 8px; border: 1px solid #2a2a31; background: var(--bg); color: var(--text); font: inherit; }
+/* The bare input rule above styles the message box: undo it for the slider. */
+input[type="range"] { width: 120px; flex: none; padding: 0; border: none; background: none; accent-color: var(--gold); }

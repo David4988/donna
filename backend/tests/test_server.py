@@ -6,11 +6,12 @@ from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
 import server
+import settings
 import voice
 
 
 @pytest.fixture
-def url(monkeypatch):
+def url(monkeypatch, tmp_path):
     """Start the real server on a free port in a background thread (fake brain)."""
     monkeypatch.setenv("DONNA_LLM", "fake")
     monkeypatch.setenv("DONNA_STT", "fake")  # the audio bytes ARE the text
@@ -20,6 +21,10 @@ def url(monkeypatch):
     # -- that is the half-duplex rule -- but a test shouldn't spend ten real
     # seconds pretending to speak a long sentence.
     monkeypatch.setattr(voice, "_sleep", lambda seconds: None)
+    # These tests change settings over a real socket, and settings are saved to
+    # a file. Point that file somewhere disposable or the suite rewrites the
+    # settings of whoever ran it.
+    monkeypatch.setattr(settings, "PATH", tmp_path / "settings.json")
     srv = server.make_server(port=0)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -184,3 +189,23 @@ def test_a_refused_setting_comes_back_as_it_really_is(url):
         reply = json.loads(ws.recv(timeout=5))
     assert reply["settings"]["speed"] == 2.0  # clamped, not accepted
     assert reply["settings"]["voice"] != "no-such-voice"
+
+
+def test_live_words_arrive_and_start_no_turn(url):
+    """Proves the prefix routing end to end, on the fake path."""
+    with connect(url) as ws:
+        start(ws)
+        say(ws, "Hey Jarvis, what time is it")  # wake her
+        ws.send(server.PARTIAL_PREFIX + b"open not")
+        reply = json.loads(ws.recv(timeout=5))
+        assert reply == {"type": "partial_transcript", "text": "open not"}
+        with pytest.raises(TimeoutError):
+            ws.recv(timeout=0.5)  # no turn, no state, nothing spoken
+
+
+def test_a_partial_while_asleep_produces_nothing(url):
+    with connect(url) as ws:
+        start(ws)
+        ws.send(server.PARTIAL_PREFIX + b"anything")
+        with pytest.raises(TimeoutError):
+            ws.recv(timeout=0.5)

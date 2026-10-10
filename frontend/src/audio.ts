@@ -8,7 +8,10 @@ export const VOICE_RATE = 22050; // what she sends back: PCM16 mono, Piper's rat
 
 // One utterance is one WebSocket frame, and the backend drops anything longer.
 // Keep this below voice.MAX_UTTERANCE_BYTES.
-export const MAX_UTTERANCE_SECONDS = 20;
+// 19, not 20: a worklet frame lands every 8ms, so a cap of 20 overshoots to
+// 640,256 bytes and the backend -- which drops anything over 640,000 -- threw
+// the whole utterance away. Keep this below voice.MAX_UTTERANCE_BYTES.
+export const MAX_UTTERANCE_SECONDS = 19;
 
 /**
  * Float samples (-1..1) to little-endian PCM16, which is what the wire and
@@ -91,6 +94,8 @@ registerProcessor("tap", Tap);
 `;
 
 const SILENCE_TO_END_MS = 700; // quiet for this long means you've finished
+const PARTIAL_EVERY_MS = 600; // how often to show what you've said so far
+const PARTIAL_AFTER_MS = 1000; // ...but not until there's something worth reading
 const FRAMES_TO_START = 3; // this many loud frames in a row means you've started
 const FLOOR = 0.012; // below this is never speech, however quiet the room
 const OVER_FLOOR = 2.5; // speech is this much louder than the room
@@ -116,7 +121,12 @@ export class Mic {
   private speaking = false;
   private noiseFloor = FLOOR;
 
-  constructor(private readonly onUtterance: (audio: Float32Array) => void) {}
+  private partialAt = 0;
+
+  constructor(
+    private readonly onUtterance: (audio: Float32Array) => void,
+    private readonly onPartial?: (audio: Float32Array) => void,
+  ) {}
 
   get running(): boolean {
     return this.context !== null;
@@ -157,6 +167,7 @@ export class Mic {
     this.samples = 0;
     this.loudFrames = 0;
     this.speaking = false;
+    this.partialAt = 0;
   }
 
   private hear(frame: Float32Array, rate: number) {
@@ -179,6 +190,17 @@ export class Mic {
     this.collecting.push(frame);
     this.samples += frame.length;
 
+    // Show what you've said so far, every so often, while you keep talking.
+    const spokenMs = (this.samples / rate) * 1000;
+    if (
+      this.onPartial &&
+      spokenMs > PARTIAL_AFTER_MS &&
+      spokenMs - this.partialAt > PARTIAL_EVERY_MS
+    ) {
+      this.partialAt = spokenMs;
+      this.onPartial(this.joined());
+    }
+
     if (loud) {
       this.quietSince = 0;
     } else {
@@ -190,18 +212,27 @@ export class Mic {
     if (this.samples > MAX_UTTERANCE_SECONDS * rate) this.finish(rate);
   }
 
+  /** Everything heard so far, as one run of samples. */
+  private joined(): Float32Array {
+    return join(this.collecting, this.samples);
+  }
+
   private finish(rate: number) {
     const { collecting, samples } = this;
     this.reset();
     this.quietSince = 0;
     if (samples < 0.3 * rate) return; // a cough, a click, a door
 
-    const audio = new Float32Array(samples);
-    let at = 0;
-    for (const frame of collecting) {
-      audio.set(frame, at);
-      at += frame.length;
-    }
-    this.onUtterance(audio);
+    this.onUtterance(join(collecting, samples));
   }
+}
+
+function join(frames: Float32Array[], total: number): Float32Array {
+  const audio = new Float32Array(total);
+  let at = 0;
+  for (const frame of frames) {
+    audio.set(frame, at);
+    at += frame.length;
+  }
+  return audio;
 }

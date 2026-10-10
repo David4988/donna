@@ -118,6 +118,29 @@ class Session:
             voices = []
         self._send({"type": "settings", "settings": settings.current(), "voices": voices})
 
+    def on_partial(self, pcm):
+        """Half of a sentence, while you are still saying it.
+
+        This puts words on the screen and does nothing else: no turn, no state
+        change, no history, no reply. The agent only ever sees a finished
+        utterance, which arrives through on_audio. That it is a separate method
+        touching none of the session's state is the guarantee, and a test says
+        so.
+        """
+        if self._state != AWAKE:
+            return  # asleep the wake word is the gate; speaking is half-duplex
+        if len(pcm) > MAX_UTTERANCE_BYTES:
+            return
+        try:
+            heard = stt.transcribe_partial(pcm)
+        except stt.SttError:
+            return  # on_audio is the one that reports deafness, not a guess
+        if not heard or speech_text.is_garbage(heard):
+            return
+        if speech_text.echoes(self._said, heard):
+            return  # her own voice, not yours
+        self._send({"type": "partial_transcript", "text": heard})
+
     def on_text(self, text):
         """A typed message: the same turn, without transcription or a wake word."""
         self._set_state(AWAKE)

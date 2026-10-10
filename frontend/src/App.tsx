@@ -8,6 +8,10 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Mic, Speaker, toPcm16 } from "./audio";
+import Settings, { type Sound } from "./Settings";
+
+// Marks audio sent while you are still speaking (see backend/server.py).
+const PARTIAL_PREFIX = new TextEncoder().encode("DONNAPRT");
 
 const BACKEND_URL = "ws://127.0.0.1:8765";
 
@@ -15,6 +19,8 @@ const BACKEND_URL = "ws://127.0.0.1:8765";
 // Audio arrives as binary frames, not as one of these.
 type ServerMessage =
   | { type: "transcript"; text: string }
+  | { type: "partial_transcript"; text: string }
+  | { type: "settings"; settings: Sound; voices: string[] }
   | { type: "state"; name: string }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: string }
@@ -25,7 +31,13 @@ type ServerMessage =
 // One line in the conversation. Deltas build up the reply below rather than
 // becoming lines, and `state` drives the header rather than the transcript.
 type Line =
-  | Exclude<ServerMessage, { type: "assistant_delta" } | { type: "state" }>
+  | Exclude<
+      ServerMessage,
+      | { type: "assistant_delta" }
+      | { type: "state" }
+      | { type: "partial_transcript" }
+      | { type: "settings" }
+    >
   | { type: "you"; text: string };
 
 export default function App() {
@@ -37,6 +49,13 @@ export default function App() {
   const [state, setState] = useState("asleep"); // what the backend says she's doing
   const [listening, setListening] = useState(false); // has the mic been switched on?
   const [micProblem, setMicProblem] = useState("");
+  const [partial, setPartial] = useState(""); // what she thinks you are saying
+  const [sound, setSound] = useState<Sound | null>(null); // null until she says
+  const [voices, setVoices] = useState<string[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [changingVoice, setChangingVoice] = useState(false);
+  const awake = useRef(false); // the mic callback is built once, so it cannot read state
+  const partialInFlight = useRef(false);
   const socket = useRef<WebSocket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const speaker = useRef(new Speaker());
@@ -65,8 +84,21 @@ export default function App() {
           setReply((old) => old + message.text);
           return; // a piece of the answer, not a line of its own
         }
+        if (message.type === "partial_transcript") {
+          setPartial(message.text);
+          partialInFlight.current = false;
+          return; // a guess at your words, not a line of its own
+        }
+        if (message.type === "settings") {
+          setSound(message.settings);
+          setVoices(message.voices);
+          setChangingVoice(false);
+          return; // the panel, not the transcript
+        }
         if (message.type === "state") {
           setState(message.name);
+          awake.current = message.name === "awake";
+          if (message.name !== "awake") setPartial("");
           if (message.name === "speaking") setWaiting(false);
           return; // the header, not the transcript
         }
@@ -74,6 +106,7 @@ export default function App() {
         // Anything else ends the live reply. When it's the assistant_message it
         // holds the very same text, so clearing here cannot duplicate it.
         setReply("");
+        setPartial(""); // the real transcript arrived, or the turn moved on
         setLines((old) => [...old, message]);
         if (message.type === "assistant_message" || message.type === "error") {
           setWaiting(false); // that was the final reply
@@ -86,6 +119,8 @@ export default function App() {
         setWaiting(false);
         setReply("");
         setState("asleep");
+        setPartial("");
+        awake.current = false;
         speaker.current.stop();
         if (!stopped) retryTimer = window.setTimeout(connect, 2000);
       };
@@ -102,12 +137,28 @@ export default function App() {
   // The microphone. The window decides only that someone finished speaking;
   // whether it was meant for her is the backend's call.
   const mic = useRef(
-    new Mic((audio) => {
-      // She can't hear while she's talking, and the backend drops it anyway --
-      // but her own voice leaking past echo cancellation shouldn't even be sent.
-      if (speaker.current.busy) return;
-      socket.current?.send(toPcm16(audio));
-    }),
+    new Mic(
+      (audio) => {
+        // She cannot hear while she is talking, and the backend drops it
+        // anyway -- but her own voice leaking past echo cancellation should
+        // not even be sent.
+        if (speaker.current.busy) return;
+        socket.current?.send(toPcm16(audio));
+      },
+      (audio) => {
+        // Words while you are still speaking. Only once she is awake --
+        // asleep, the wake word is the gate and nothing is transcribed.
+        // Skipping while one is still out means a slow machine shows fewer
+        // words rather than queueing them in front of your real question.
+        if (!awake.current || speaker.current.busy || partialInFlight.current) return;
+        const pcm = new Uint8Array(toPcm16(audio));
+        const marked = new Uint8Array(PARTIAL_PREFIX.length + pcm.length);
+        marked.set(PARTIAL_PREFIX);
+        marked.set(pcm, PARTIAL_PREFIX.length);
+        partialInFlight.current = true;
+        socket.current?.send(marked);
+      },
+    ),
   );
 
   // Switch the microphone off when the window goes away.
@@ -121,7 +172,7 @@ export default function App() {
   // useEffect that returns a non-function crashes React when it runs the cleanup.
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [lines, waiting, reply]);
+  }, [lines, waiting, reply, partial]);
 
   /** One click per launch: an AudioContext starts suspended, and the browser
    *  only asks for the microphone during a real gesture. */
@@ -138,6 +189,11 @@ export default function App() {
           : `DONNA can't hear you — ${String(error)}`,
       );
     }
+  }
+
+  function changeSound(change: Partial<Sound>) {
+    if (change.voice && change.voice !== sound?.voice) setChangingVoice(true);
+    socket.current?.send(JSON.stringify({ type: "settings_change", settings: change }));
   }
 
   function send(event: FormEvent) {
@@ -157,10 +213,17 @@ export default function App() {
       <header>
         <span className="orb" />
         <h1>DONNA</h1>
+        <button type="button" className="ghost" onClick={() => setShowSettings((on) => !on)}>
+          {showSettings ? "close" : "settings"}
+        </button>
         <span className={connected ? "status on" : "status"}>
           {connected ? statusWords(state, listening) : "disconnected"}
         </span>
       </header>
+
+      {showSettings && sound && (
+        <Settings sound={sound} voices={voices} changing={changingVoice} onChange={changeSound} />
+      )}
 
       <main>
         {!connected && (
@@ -180,6 +243,7 @@ export default function App() {
         {lines.map((line, index) => (
           <LineView key={index} line={line} />
         ))}
+        {partial.length > 0 && <p className="you partial">{partial}</p>}
         {reply.length > 0 && <p className="donna">{reply}</p>}
         {waiting && reply.length === 0 && <p className="thinking">DONNA is thinking…</p>}
         <div ref={bottom} />

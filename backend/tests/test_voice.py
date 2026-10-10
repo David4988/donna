@@ -364,3 +364,78 @@ def test_one_state_message_per_real_change(monkeypatch):
     states = [m["name"] for m in sent if isinstance(m, dict) and m["type"] == "state"]
     assert states == ["awake", "speaking", "awake"]
     assert all(a != b for a, b in zip(states, states[1:]))
+
+
+# ---------------------------------------------------------------- partials
+
+
+def partials(monkeypatch, heard):
+    """Fake the partial transcriber, and report what it was asked for."""
+    asked = []
+
+    def transcribe_partial(pcm):
+        asked.append(pcm)
+        return heard.pop(0) if heard else ""
+
+    monkeypatch.setattr(stt, "transcribe_partial", transcribe_partial)
+    return asked
+
+
+def test_a_partial_never_reaches_the_agent(monkeypatch):
+    """The guarantee: live words put text on screen and do nothing else."""
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, hello"], reply=HELLO)
+    partials(monkeypatch, ["open", "open not", "open notepad"])
+    donna = session(sent)
+    donna.on_audio(b"x" * 20000)  # wake her; she greets back
+    sent.clear()
+    spoken.clear()
+    _play.asked.clear()
+
+    for _ in range(3):
+        donna.on_partial(b"x" * 20000)
+
+    assert [m["type"] for m in sent] == ["partial_transcript"] * 3
+    assert [m["text"] for m in sent] == ["open", "open not", "open notepad"]
+    assert _play.asked == [], "a partial started a turn"
+    assert spoken == [], "a partial made her speak"
+
+
+def test_partials_are_ignored_while_asleep(monkeypatch):
+    sent, _, _, _ = fake_voice(monkeypatch)
+    asked = partials(monkeypatch, ["something"])
+    session(sent).on_partial(b"x" * 20000)
+    assert sent == []
+    assert asked == [], "she transcribed a partial while asleep"
+
+
+def test_partials_are_ignored_while_speaking(monkeypatch):
+    sent, _, _, _ = fake_voice(monkeypatch)
+    asked = partials(monkeypatch, ["something"])
+    donna = session(sent)
+    donna._state = voice.SPEAKING
+    donna.on_partial(b"x" * 20000)
+    assert sent == []
+    assert asked == []
+
+
+def test_a_partial_does_not_keep_her_awake(monkeypatch):
+    """Deliberate: on_partial must touch no session state, timer included."""
+    sent, _, _, clock = fake_voice(monkeypatch, heard=["Hey Jarvis, hello"], reply=HELLO)
+    partials(monkeypatch, ["still talking"])
+    donna = session(sent)
+    donna.on_audio(b"x" * 20000)
+    before = donna._last_heard
+    clock[0] += 5
+    donna.on_partial(b"x" * 20000)
+    assert donna._last_heard == before
+
+
+def test_her_own_voice_is_not_shown_as_your_words(monkeypatch):
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, hello"], reply=HELLO)
+    partials(monkeypatch, ["Hello."])  # the speakers leaking back
+    donna = session(sent)
+    donna.on_audio(b"x" * 20000)
+    donna._state = voice.AWAKE
+    sent.clear()
+    donna.on_partial(b"x" * 20000)
+    assert sent == []
