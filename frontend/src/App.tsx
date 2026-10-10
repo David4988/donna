@@ -173,7 +173,7 @@ export default function App() {
             <button type="button" onClick={startVoice}>
               Start voice
             </button>{" "}
-            then say “Hey Donna”.
+            then say “Hey Jarvis”.
           </p>
         )}
         {micProblem && <p className="error">{micProblem}</p>}
@@ -212,7 +212,7 @@ function statusWords(state: string, listening: boolean) {
     case "awake":
       return "listening";
     default:
-      return listening ? "say “Hey Donna”" : "connected";
+      return listening ? "say “Hey Jarvis”" : "connected";
   }
 }
 

@@ -4,28 +4,32 @@ Nothing here touches a microphone, a model or a socket: it is all plain string
 work, so it is cheap to test and the tests run without faster-whisper or Piper
 installed.
 
-    wake(heard)         is this for DONNA, and what is she being asked?
+    strip_wake_phrase() take the summons off the front of what she heard
     take_sentences(s)   which part of a half-written reply can be spoken yet?
     for_speech(text)    the same words, with things Piper shouldn't read aloud removed
     is_garbage(heard)   did the microphone pick up anything that was actually speech?
     echoes(said, heard) is this DONNA hearing herself through the speakers?
+
+Deciding whether she was addressed at all is wake.py's job, not this file's.
 """
 
+import logging
 import re
 import unicodedata
 
-# How Whisper spells her name. Collected from real mis-hearings; add to this
-# when she ignores you.
+# How Whisper spells the summons. Collected from real mis-hearings; add to
+# this when she ignores you.
 #
 # This is an explicit list on purpose. Fuzzy matching cannot do this job:
 # measured with difflib against "donna", the realistic mis-hearing "dawn"
-# scores 0.444 -- exactly what "open" scores -- while "gonna" scores 0.800,
-# the same as the real mis-hearing "danna". Every threshold low enough to
-# catch what Whisper actually produces also wakes her on ordinary words, so
-# please don't "improve" this into a similarity score.
-NAMES = frozenset(
-    {"donna", "dona", "donnna", "donah", "danna", "dawna", "dawn", "donner", "doner", "duna"}
-)
+# scored 0.444 -- exactly what "open" scores -- while "gonna" scored 0.800,
+# the same as the real mis-hearing "danna". The same trap waits for any name,
+# so please don't "improve" this into a similarity score.
+#
+# Note this list no longer DECIDES anything: openWakeWord decides, in wake.py.
+# All this does is take the summons off the front of what she heard, so being
+# generous here costs a word rather than an ignored command.
+JARVIS = frozenset({"jarvis", "jervis", "jarvus", "javis", "jarvi", "travis", "charvis"})
 
 # Words that may come before her name: "Hey Donna", "OK Donna", "Um, Donna".
 GREETINGS = frozenset({"hey", "hi", "hello", "ok", "okay", "yo", "um", "uh", "so"})
@@ -37,7 +41,7 @@ MAX_SENTENCE_CHARS = 240  # a reply with no punctuation still has to get spoken
 # was really "Hey Donna".
 PLEASANTRIES = GREETINGS | {
     "hello", "hiya", "morning", "afternoon", "evening", "good", "thanks",
-    "thank", "you", "cheers", "there", "again", "donna", "please", "well",
+    "thank", "you", "cheers", "there", "again", "donna", "jarvis", "please", "well",
 }
 
 TERMINATORS = ".!?"
@@ -52,23 +56,24 @@ def bare(word):
 # ---------------------------------------------------------------- wake
 
 
-def wake(heard):
-    """Is this addressed to DONNA, and what is she being asked?
+def strip_wake_phrase(heard):
+    """What is left of an utterance once the summons is taken off the front.
 
-        None  this wasn't for her
-        ""    her name, and nothing else
-        str   her name, and this is the command
-
-    Only the first two words are looked at, which is what makes
-    "I was talking to Dave about Donna" not an instruction.
+    By the time this runs, wake.py has already decided DONNA was called, so
+    this never answers "that wasn't for her" -- it only trims. When no
+    spelling of the name is found it returns the whole thing unchanged,
+    because ignoring you AFTER her own wake model said you called her is the
+    worst failure available: the model fires on a clipped "hey ja" and Whisper
+    may well write "Hey Travis". A stray word reaching the model is cheap --
+    the system prompt already tells her to ask when she can't tell what you
+    want.
     """
     words = heard.split()
-    for position, word in enumerate(words[:2]):
-        if bare(word) in NAMES:
-            if position == 1 and bare(words[0]) not in GREETINGS:
-                return None  # "...about Donna" is talking about her, not to her
+    for position, word in enumerate(words[:3]):
+        if bare(word) in JARVIS:
             return " ".join(words[position + 1 :]).lstrip(",.;: ").strip()
-    return None
+    logging.debug("woken, but no name in %r -- passing it through whole", heard)
+    return heard.strip()
 
 
 def is_small_talk(text):

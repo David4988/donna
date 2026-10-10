@@ -14,6 +14,7 @@ def url(monkeypatch):
     """Start the real server on a free port in a background thread (fake brain)."""
     monkeypatch.setenv("DONNA_LLM", "fake")
     monkeypatch.setenv("DONNA_STT", "fake")  # the audio bytes ARE the text
+    monkeypatch.setenv("DONNA_WAKE", "fake")  # ...and they decide the wake word too
     monkeypatch.setenv("DONNA_TTS", "fake")  # silence of a plausible length
     # She really does wait for her own audio to finish before listening again
     # -- that is the half-duplex rule -- but a test shouldn't spend ten real
@@ -88,9 +89,9 @@ def test_a_real_question_reaches_the_brain(url):
 
 def test_a_spoken_utterance_wakes_her_and_gets_a_spoken_reply(url):
     with connect(url) as ws:
-        messages, audio = say(ws, "Hey Donna, what time is it")
+        messages, audio = say(ws, "Hey Jarvis, what time is it")
     assert {"type": "state", "name": "awake"} in messages
-    assert {"type": "transcript", "text": "Hey Donna, what time is it"} in messages
+    assert {"type": "transcript", "text": "Hey Jarvis, what time is it"} in messages
     assert [m["type"] for m in messages].count("assistant_message") == 1
     assert audio, "she replied, but said nothing out loud"
     assert all(len(frame) % 2 == 0 for frame in audio), "PCM16 frames are even-length"
@@ -102,12 +103,12 @@ def test_an_overheard_remark_produces_no_traffic_at_all(url):
         ws.send(b"what time is the train")
         with pytest.raises(TimeoutError):
             ws.recv(timeout=0.5)  # she says nothing whatsoever
-        assert say(ws, "Donna, hi")[0], "and she still works afterwards"
+        assert say(ws, "Hey Jarvis, hi")[0], "and she still works afterwards"
 
 
 def test_typed_and_spoken_turns_share_one_connection(url):
     with connect(url) as ws:
-        say(ws, "Donna, hi")
+        say(ws, "Hey Jarvis, hi")
         assert ask(ws, "hi")[-1]["type"] == "assistant_message"
 
 

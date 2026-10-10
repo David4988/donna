@@ -5,9 +5,10 @@ import speech_text
 import stt
 import tts
 import voice
+import wake
 
 
-def fake_voice(monkeypatch, *, heard=(), reply=()):
+def fake_voice(monkeypatch, *, heard=(), reply=(), wakes=None):
     """Replace the ears, the voice, the agent and the clock with scripted fakes.
 
     Returns (sent, spoken, slept, clock): everything that went out, every
@@ -15,9 +16,18 @@ def fake_voice(monkeypatch, *, heard=(), reply=()):
     one-item list holding the fake time so tests can move it.
     """
     heard, sent, spoken, slept, clock = list(heard), [], [], [], [1000.0]
+    wakes = None if wakes is None else list(wakes)
+    transcribed = []
 
     def transcribe(pcm):
+        transcribed.append(pcm)
         return heard.pop(0) if heard else ""
+
+    def heard_wake_word(pcm):
+        return wakes.pop(0) if wakes else True
+
+    monkeypatch.setattr(wake, "heard_wake_word", heard_wake_word)
+    fake_voice.transcribed = transcribed
 
     def synthesise(text):
         spoken.append(text)
@@ -64,15 +74,41 @@ HELLO = [
 
 def test_an_overheard_remark_is_ignored_while_asleep(monkeypatch):
     """The behaviour an open mic lives or dies on: she says nothing whatsoever."""
-    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["what time is the train"], reply=HELLO)
+    sent, spoken, _, _ = fake_voice(
+        monkeypatch, heard=["what time is the train"], reply=HELLO, wakes=[False]
+    )
     session(sent).on_audio(b"x" * 20000)
     assert sent == []
     assert spoken == []
     assert _play.asked == []
 
 
+def test_whisper_never_runs_while_asleep(monkeypatch):
+    """The whole point of the wake word, stated as a test.
+
+    Before this change every sound in the room cost a full Whisper pass. Now
+    nothing is transcribed until the wake model has fired.
+    """
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["anything at all"], wakes=[False])
+    session(sent).on_audio(b"x" * 20000)
+    assert fake_voice.transcribed == [], "she transcribed something while asleep"
+
+
+def test_a_missing_wake_model_is_reported_once_and_starts_no_turn(monkeypatch):
+    sent, _, _, _ = fake_voice(monkeypatch)
+    monkeypatch.setattr(
+        wake, "heard_wake_word", lambda pcm: (_ for _ in ()).throw(wake.WakeError("not installed"))
+    )
+    donna = session(sent)
+    donna.on_audio(b"x" * 20000)
+    donna.on_audio(b"x" * 20000)
+    assert sent == [{"type": "state", "name": "deaf"}]
+    assert fake_voice.transcribed == []
+    assert _play.asked == []
+
+
 def test_hearing_her_name_wakes_her_and_runs_the_command(monkeypatch):
-    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Donna, open notepad"], reply=HELLO)
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, open notepad"], reply=HELLO)
     session(sent).on_audio(b"x" * 20000)
     assert types(sent) == [
         "state",  # awake
@@ -82,13 +118,13 @@ def test_hearing_her_name_wakes_her_and_runs_the_command(monkeypatch):
         "assistant_message",
         "state",  # awake again
     ]
-    assert sent[1] == {"type": "transcript", "text": "Hey Donna, open notepad"}
-    assert _play.asked == ["open notepad"]  # the name is stripped
+    assert sent[1] == {"type": "transcript", "text": "Hey Jarvis, open notepad"}
+    assert _play.asked == ["open notepad"]  # the summons is stripped
     assert spoken == ["Hello."]
 
 
 def test_her_name_alone_gets_an_answer_without_troubling_the_model(monkeypatch):
-    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Donna?"])
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis"])
     session(sent).on_audio(b"x" * 20000)
     assert _play.asked == []
     assert [m for m in sent if isinstance(m, dict) and m["type"] == "assistant_message"] == [
@@ -102,7 +138,7 @@ def test_her_name_alone_gets_an_answer_without_troubling_the_model(monkeypatch):
 
 def test_while_awake_no_name_is_needed(monkeypatch):
     sent, _, _, _ = fake_voice(
-        monkeypatch, heard=["Donna, what time is it", "and now"], reply=HELLO
+        monkeypatch, heard=["Hey Jarvis, what time is it", "and now"], reply=HELLO
     )
     donna = session(sent)
     donna.on_audio(b"x" * 20000)
@@ -112,7 +148,10 @@ def test_while_awake_no_name_is_needed(monkeypatch):
 
 def test_she_needs_her_name_again_after_the_silence(monkeypatch):
     sent, _, _, clock = fake_voice(
-        monkeypatch, heard=["Donna, what time is it", "and now"], reply=HELLO
+        monkeypatch,
+        heard=["Hey Jarvis, what time is it", "and now"],
+        reply=HELLO,
+        wakes=[True, False],  # the second one didn't say her name
     )
     donna = session(sent)
     donna.on_audio(b"x" * 20000)
@@ -124,7 +163,7 @@ def test_she_needs_her_name_again_after_the_silence(monkeypatch):
 
 
 def test_audio_is_ignored_while_speaking(monkeypatch):
-    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"])
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"])
     donna = session(sent)
     donna._state = voice.SPEAKING
     donna.on_audio(b"x" * 20000)
@@ -133,14 +172,14 @@ def test_audio_is_ignored_while_speaking(monkeypatch):
 
 
 def test_a_too_long_utterance_is_dropped_before_it_kills_the_socket(monkeypatch):
-    sent, _, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"])
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"])
     session(sent).on_audio(b"\0" * (voice.MAX_UTTERANCE_BYTES + 2))
     assert sent == []
 
 
 def test_her_own_voice_does_not_wake_her(monkeypatch):
     sent, _, _, _ = fake_voice(
-        monkeypatch, heard=["Donna, what time is it", "Hello."], reply=HELLO
+        monkeypatch, heard=["Hey Jarvis, what time is it", "Hello."], reply=HELLO
     )
     donna = session(sent)
     donna.on_audio(b"x" * 20000)  # she replies "Hello." and says it out loud
@@ -157,7 +196,7 @@ def test_her_own_voice_does_not_wake_her(monkeypatch):
 def test_each_sentence_is_spoken_as_it_streams(monkeypatch):
     sent, spoken, _, _ = fake_voice(
         monkeypatch,
-        heard=["Donna, what time is it"],
+        heard=["Hey Jarvis, what time is it"],
         reply=[
             {"type": "assistant_delta", "text": "Hello there. "},
             {"type": "assistant_delta", "text": "VS Code is open."},
@@ -174,7 +213,7 @@ def test_each_sentence_is_spoken_as_it_streams(monkeypatch):
 
 
 def test_the_final_reply_is_not_spoken_twice(monkeypatch):
-    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"], reply=HELLO)
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"], reply=HELLO)
     session(sent).on_audio(b"x" * 20000)
     assert spoken == ["Hello."]
 
@@ -183,7 +222,7 @@ def test_a_reply_that_never_streamed_is_still_spoken(monkeypatch):
     """agent.py sends the 'I got stuck' message with no deltas at all."""
     stuck = "Sorry, I got stuck trying to do that."
     sent, spoken, _, _ = fake_voice(
-        monkeypatch, heard=["Donna, what time is it"], reply=[{"type": "assistant_message", "text": stuck}]
+        monkeypatch, heard=["Hey Jarvis, what time is it"], reply=[{"type": "assistant_message", "text": stuck}]
     )
     session(sent).on_audio(b"x" * 20000)
     assert spoken == [stuck]
@@ -192,7 +231,7 @@ def test_a_reply_that_never_streamed_is_still_spoken(monkeypatch):
 def test_an_error_is_spoken_and_she_goes_back_to_listening(monkeypatch):
     sent, spoken, _, _ = fake_voice(
         monkeypatch,
-        heard=["Donna, what time is it"],
+        heard=["Hey Jarvis, what time is it"],
         reply=[{"type": "error", "text": "Can't reach the model."}],
     )
     session(sent).on_audio(b"x" * 20000)
@@ -203,7 +242,7 @@ def test_an_error_is_spoken_and_she_goes_back_to_listening(monkeypatch):
 def test_a_tool_preamble_is_not_mixed_into_the_answer(monkeypatch):
     sent, spoken, _, _ = fake_voice(
         monkeypatch,
-        heard=["Donna, find my files"],
+        heard=["Hey Jarvis, find my files"],
         reply=[
             {"type": "assistant_delta", "text": "Let me check. "},
             {"type": "tool_call", "name": "find_files", "args": {"query": "x"}},
@@ -219,7 +258,7 @@ def test_a_tool_preamble_is_not_mixed_into_the_answer(monkeypatch):
 def test_speaking_lasts_as_long_as_the_audio(monkeypatch):
     sent, spoken, slept, _ = fake_voice(
         monkeypatch,
-        heard=["Donna, what time is it"],
+        heard=["Hey Jarvis, what time is it"],
         reply=[
             {"type": "assistant_delta", "text": "One. Two. Three. "},
             {"type": "assistant_message", "text": "One. Two. Three."},
@@ -234,7 +273,7 @@ def test_speaking_lasts_as_long_as_the_audio(monkeypatch):
 def test_a_synthesis_failure_does_not_lose_the_reply(monkeypatch):
     sent, spoken, _, _ = fake_voice(
         monkeypatch,
-        heard=["Donna, what time is it"],
+        heard=["Hey Jarvis, what time is it"],
         reply=[
             {"type": "assistant_delta", "text": "One. Two. "},
             {"type": "assistant_message", "text": "One. Two."},
@@ -255,7 +294,7 @@ def test_a_synthesis_failure_does_not_lose_the_reply(monkeypatch):
 
 
 def test_she_only_says_she_is_mute_once(monkeypatch):
-    sent, _, _, _ = fake_voice(monkeypatch, heard=["Donna, open notepad", "open notepad"], reply=HELLO)
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, open notepad", "open notepad"], reply=HELLO)
     monkeypatch.setattr(tts, "synthesise", lambda text: (_ for _ in ()).throw(tts.TtsError("no")))
     donna = session(sent)
     donna.on_audio(b"x" * 20000)
@@ -284,7 +323,7 @@ def test_a_typed_message_is_answered_out_loud(monkeypatch):
 
 
 def test_a_voice_turn_and_a_typed_turn_share_the_conversation(monkeypatch):
-    sent, _, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"], reply=HELLO)
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"], reply=HELLO)
     history = []
     seen = []
     monkeypatch.setattr(agent, "handle", lambda text, h, send: seen.append(h))
@@ -310,7 +349,7 @@ def test_a_voice_turn_and_a_typed_turn_share_the_conversation(monkeypatch):
     ],
 )
 def test_a_voice_turn_sends_exactly_one_final_reply(monkeypatch, reply):
-    sent, _, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"], reply=reply)
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"], reply=reply)
     session(sent).on_audio(b"x" * 20000)
     finals = [
         m for m in sent if isinstance(m, dict) and m["type"] in ("assistant_message", "error")
@@ -320,7 +359,7 @@ def test_a_voice_turn_sends_exactly_one_final_reply(monkeypatch, reply):
 
 def test_one_state_message_per_real_change(monkeypatch):
     """No flicker: she never announces a state she is already in."""
-    sent, _, _, _ = fake_voice(monkeypatch, heard=["Donna, what time is it"], reply=HELLO)
+    sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, what time is it"], reply=HELLO)
     session(sent).on_audio(b"x" * 20000)
     states = [m["name"] for m in sent if isinstance(m, dict) and m["type"] == "state"]
     assert states == ["awake", "speaking", "awake"]

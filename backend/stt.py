@@ -22,10 +22,10 @@ SAMPLE_RATE = 16000  # what the window sends, and what Whisper wants
 MIN_SECONDS = 0.3  # shorter than this is a cough, a click or a door
 MODEL = os.environ.get("DONNA_WHISPER_MODEL", "base.en")
 
-# Nudges Whisper towards spelling her name the way speech_text.NAMES expects.
+# Nudges Whisper towards spelling the summons the way speech_text.JARVIS expects.
 # Measured on this PC: base.en transcribes a 3.5s utterance in 0.44s, against
 # 0.21s for tiny.en and 1.32s for small.en, all three word-perfect.
-NAME_HINT = "Donna."
+NAME_HINT = "Hey Jarvis."
 
 _model = None
 

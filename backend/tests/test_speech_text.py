@@ -3,43 +3,35 @@ import pytest
 import speech_text
 
 
-# ---------------------------------------------------------------- wake
+# ---------------------------------------------------------------- strip_wake_phrase
 
 
 @pytest.mark.parametrize(
     "heard, expected",
     [
-        ("Donna, open VS Code", "open VS Code"),
-        ("Hey Donna, open VS Code", "open VS Code"),
-        ("Hey, Donna. Open VS Code.", "Open VS Code."),
-        ("donna open vs code", "open vs code"),
-        ("OK Donna, hello", "hello"),
-        ("Dona, what time is it?", "what time is it?"),  # Whisper spells it short
-        ("Hey Dawn, find my files", "find my files"),  # a different word entirely
-        ("Donner, open notepad", "open notepad"),
-        ("Donna", ""),  # her name and nothing else
-        ("Donna?", ""),
-        ("Open VS Code", None),  # no name: not for her
-        ("I was talking to Dave about dinner", None),
-        ("Gonna open VS Code", None),
-        ("Madonna is on the radio", None),
-        ("", None),
+        ("Hey Jarvis, open notepad", "open notepad"),
+        ("Hey Jarvis. Open notepad.", "Open notepad."),
+        ("Jarvis, open notepad", "open notepad"),
+        ("hey jarvis open notepad", "open notepad"),
+        ("Hey Javis, find my files", "find my files"),  # Whisper drops the r
+        ("Hey Jarvis", ""),  # the summons and nothing else
+        ("Jarvis?", ""),
+        ("", ""),
     ],
 )
-def test_wake(heard, expected):
-    assert speech_text.wake(heard) == expected
+def test_strip_wake_phrase(heard, expected):
+    assert speech_text.strip_wake_phrase(heard) == expected
 
 
-def test_the_name_list_is_not_a_similarity_score():
-    """Regression for the measurement that says fuzzy matching cannot work here.
+def test_a_misheard_summons_is_passed_through_whole():
+    """wake.py already said she was called, so this must never answer "not for her".
 
-    difflib scores "gonna" against "donna" at 0.800 -- the same as the real
-    mis-hearing "danna" -- and "dawn" at 0.444, exactly what "open" scores.
-    Any threshold that catches the real mistakes also catches these.
+    The model fires on a clipped "hey ja" and Whisper may write something else
+    entirely. Dropping the command there would mean ignoring you right after
+    her own wake word said you summoned her -- the worst failure available.
     """
-    assert speech_text.wake("Gonna grab a coffee") is None
-    assert speech_text.wake("Madonna is on the radio") is None
-    assert speech_text.wake("Dawn, find my files") == "find my files"
+    assert speech_text.strip_wake_phrase("Hey Marvin, open notepad") == "Hey Marvin, open notepad"
+    assert speech_text.strip_wake_phrase("open notepad") == "open notepad"
 
 
 # ---------------------------------------------------------------- take_sentences
@@ -136,7 +128,7 @@ def test_what_you_actually_say_is_not_an_echo():
 @pytest.mark.parametrize(
     "text",
     ["Hello", "hello.", "Hi there", "Hey", "Thanks!", "thank you", "Good morning",
-     "Donna", "hello again", "yo", "", "   "],
+     "Donna", "Jarvis", "hey jarvis", "hello again", "yo", "", "   "],
 )
 def test_a_greeting_never_reaches_the_model(text):
     """qwen3.5:4b opens a random app when handed a contentless utterance."""

@@ -10,10 +10,10 @@ exists.
        ▲                                                │
        └──────────── her audio finished playing ────────┘
 
-While ASLEEP every utterance is still transcribed, and discarded unless it
-starts with her name. An utterance that is dropped starts no turn and sends
-NOTHING AT ALL: an open mic that answers things not addressed to it is
-unusable.
+While ASLEEP an utterance is checked by the wake word model (wake.py) and
+thrown away unless someone said "Hey Jarvis" -- it is never transcribed. An
+utterance that is dropped starts no turn and sends NOTHING AT ALL: an open mic
+that answers things not addressed to it is unusable.
 
 Nothing here imports websockets, so the whole state machine is testable
 without a socket.
@@ -26,6 +26,7 @@ import agent
 import speech_text
 import stt
 import tts
+import wake
 
 ASLEEP, AWAKE, SPEAKING = "asleep", "awake", "speaking"
 DEAF, MUTE = "deaf", "mute"  # one-shot capability notices, not session states
@@ -62,6 +63,16 @@ class Session:
         if self._state == AWAKE and _now() - self._last_heard > SILENCE_SECONDS:
             self._set_state(ASLEEP)
 
+        if self._state == ASLEEP:
+            # The whole point of the wake word: while she is asleep, Whisper
+            # does not run at all. Everything said in the room is checked by a
+            # small model that only knows one phrase, and is thrown away.
+            try:
+                if not wake.heard_wake_word(pcm):
+                    return logging.debug("ignored %d bytes: nobody said her name", len(pcm))
+            except wake.WakeError as error:
+                return self._cannot(DEAF, error)
+
         try:
             heard = stt.transcribe(pcm)
         except stt.SttError as error:
@@ -72,9 +83,9 @@ class Session:
         if speech_text.echoes(self._said, heard):
             return logging.debug("ignored %r: that was her own voice", heard)
 
-        command = heard if self._state == AWAKE else speech_text.wake(heard)
-        if command is None:
-            return logging.debug("ignored %r: not addressed to her", heard)
+        # Awake, every word is for her. Asleep, the wake word already fired,
+        # so all that is left is to take the summons off the front.
+        command = heard if self._state == AWAKE else speech_text.strip_wake_phrase(heard)
 
         self._set_state(AWAKE)
         self._last_heard = _now()

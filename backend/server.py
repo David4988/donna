@@ -42,6 +42,7 @@ from websockets.sync.server import serve
 import stt
 import tts
 import voice
+import wake
 
 HOST = "127.0.0.1"  # only programs on this computer can connect
 PORT = 8765
@@ -113,8 +114,9 @@ def make_server(port=PORT):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    # Load the ears and the voice now: between them they take about 17 seconds,
-    # and paying that on your first sentence would ruin the point.
+    # Load the wake word, the ears and the voice now: between them they take
+    # about 17 seconds, and paying that on your first sentence would ruin it.
+    wake.warm()
     stt.warm()
     tts.warm()
     with make_server() as server:

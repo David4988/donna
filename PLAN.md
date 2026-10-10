@@ -177,7 +177,7 @@ setting moves it. The lever is model size, which is why 4b is the one worth havi
 | 9.5 | Streaming replies | watch the answer being typed instead of waiting for it | ✅ done |
 | 10A | Voice: she hears you and talks back | hold a conversation out loud, hands free | being designed |
 | 10B | Voice: she can be interrupted | cut her off mid-sentence, like Claude voice | after 10A |
-| 10C | "Hey Donna" wake word | summon her by name instead of a hotkey | side project |
+| 10C | "Hey Donna" wake word | summon her by her own name instead of "Hey Jarvis" | side project |
 | 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking | later |
 | 12 | Gestures | pinch and fist via webcam | later |
 | 13 | Spatial / projector | projected desk UI | later |
@@ -217,7 +217,7 @@ I merged your "Python backend" and "WebSocket connection" steps into Step 2, bec
   | Decision | Choice |
   |---|---|
   | Interaction | **Open mic session.** Enter it once, then talk freely; she sleeps again after a stretch of silence. Not hold-to-talk. |
-  | Entering the session | A **hotkey for now**, so the voice pipeline doesn't depend on wake-word quality. "Hey Donna" becomes step 10C. |
+  | Entering the session | ~~A hotkey for now.~~ **"Hey Jarvis"**, using openWakeWord's pretrained model -- no training needed, and it means Whisper never runs while she is asleep. "Hey Donna" needs a custom model and stays step 10C. She is still *called* DONNA; only the summons changed. |
   | Audio ownership | **Captured and played in the Tauri window**, streamed to Python over the existing WebSocket. The webview gives us echo cancellation and device handling for free; Python still decides everything. |
   | Speech-to-text | **faster-whisper on the CPU**, as the README planned. The 5800X carries it so the GPU stays free for the model. |
   | Text-to-speech | **Piper** first (fast), Kokoro later (nicer), as the README planned. |
@@ -266,7 +266,7 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 | Not now | When it comes back |
 |---|---|
 | Voice: mic, speech-to-text, text-to-speech | **Step 10A — being designed now.** |
-| Wake word ("Hey Donna") | Step 10C, a side project. No pretrained model exists for the phrase and custom training is uncertain, so it must not block 10A. |
+| Wake word ("Hey Donna") | Step 10C. ~~No pretrained model exists for the phrase~~ -- true of "Hey Donna", so 10A ships with openWakeWord's pretrained **"Hey Jarvis"** instead. Training her own name is now a nicety, not a blocker. |
 | 3D avatar / shaders | Step 11 |
 | Gestures, cameras, MediaPipe | Step 12 |
 | Projector, stereo cameras, spatial UI | Step 13 |
