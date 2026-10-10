@@ -23,6 +23,7 @@ import logging
 import time
 
 import agent
+import settings
 import speech_text
 import stt
 import tts
@@ -94,6 +95,28 @@ class Session:
             self._run(command)
         else:
             self._answer("Yes?")  # her name, and nothing else
+
+    def on_settings(self, changes):
+        """A control moved. Not a turn: nothing is said and nothing is remembered."""
+        try:
+            now = settings.update(changes)
+        except settings.SettingsError as error:
+            logging.error("%s", error)
+            now = settings.current()
+        try:
+            tts.configure(voice=now["voice"], speed=now["speed"])
+        except tts.TtsError as error:
+            logging.error("%s", error)  # keep the old voice; the reply tells the truth
+        self.send_settings()
+
+    def send_settings(self):
+        """Tell the window what she is set to, and what else she could sound like."""
+        try:
+            voices = tts.installed_voices()
+        except Exception as error:  # a missing voice folder must not kill the connection
+            logging.error("%s", error)
+            voices = []
+        self._send({"type": "settings", "settings": settings.current(), "voices": voices})
 
     def on_text(self, text):
         """A typed message: the same turn, without transcription or a wake word."""

@@ -9,8 +9,10 @@ is one sentence of her reply (PCM16 mono 22050 Hz).
 Every other message is JSON with a "type":
 
     UI -> backend   user_message       {"text": "..."}
+                    settings_change    {"settings": {"voice": "...", "speed": 1.0}}
     backend -> UI   transcript         {"text": "..."}
                     state              {"name": "..."}
+                    settings           {"settings": {...}, "voices": [...]}
                     tool_call          {"name": "...", "args": {...}}
                     tool_result        {"name": "...", "result": "..."}
                     assistant_delta    {"text": "..."}
@@ -31,6 +33,11 @@ non-delta message ends the run of deltas before it.
 state is "asleep", "awake" or "speaking" for the session, plus "deaf" or
 "mute" sent once if she loses the ability to hear or speak. Those ride this
 channel rather than `error` because an error would be a second final reply.
+
+settings_change is an event (the user moved a control, and may send only the
+part that changed); settings is the state, sent once when you connect and
+again after every change. The window draws what the reply says rather than
+what it asked for, so a value she refused visibly snaps back.
 """
 
 import json
@@ -66,6 +73,14 @@ ALLOWED_ORIGINS = [
 MAX_FRAME_BYTES = 2**21
 
 
+def is_settings_change(message):
+    return (
+        isinstance(message, dict)
+        and message.get("type") == "settings_change"
+        and isinstance(message.get("settings"), dict)
+    )
+
+
 def is_user_message(message):
     return (
         isinstance(message, dict)
@@ -84,6 +99,7 @@ def handle_connection(websocket):
         websocket.send(message if isinstance(message, bytes) else json.dumps(message))
 
     session = voice.Session(send, history)
+    session.send_settings()  # so the window can draw its controls
 
     try:
         for raw in websocket:  # loops until the client disconnects
@@ -97,11 +113,12 @@ def handle_connection(websocket):
                 send({"type": "error", "text": "That wasn't valid JSON."})
                 continue
 
-            if not is_user_message(message):
-                send({"type": "error", "text": 'Expected {"type": "user_message", "text": "..."}'})
-                continue
-
-            session.on_text(message["text"].strip())
+            if is_user_message(message):
+                session.on_text(message["text"].strip())
+            elif is_settings_change(message):
+                session.on_settings(message["settings"])
+            else:
+                send({"type": "error", "text": "Expected a user_message or a settings_change."})
     except ConnectionClosed:
         pass  # the client vanished without saying goodbye (app closed, network dropped)
 

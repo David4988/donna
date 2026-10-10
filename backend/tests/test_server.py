@@ -29,6 +29,11 @@ def url(monkeypatch):
     thread.join(timeout=5)
 
 
+def start(websocket):
+    """Swallow the settings frame she sends on connect, and return it."""
+    return json.loads(websocket.recv(timeout=5))
+
+
 def collect(websocket):
     """Everything until the turn ends. Returns (json messages, audio frames).
 
@@ -100,6 +105,7 @@ def test_a_spoken_utterance_wakes_her_and_gets_a_spoken_reply(url):
 def test_an_overheard_remark_produces_no_traffic_at_all(url):
     """The behaviour an open mic lives or dies on."""
     with connect(url) as ws:
+        start(ws)
         ws.send(b"what time is the train")
         with pytest.raises(TimeoutError):
             ws.recv(timeout=0.5)  # she says nothing whatsoever
@@ -130,6 +136,7 @@ def test_the_reply_arrives_in_pieces_that_add_up_to_the_final_message(url):
 
 def test_bad_message_gets_error_and_connection_stays_open(url):
     with connect(url) as ws:
+        start(ws)
         ws.send("this is not json")
         assert json.loads(ws.recv(timeout=5))["type"] == "error"
         for bad in ([1, 2], {"type": "something_else"}, {"type": "user_message", "text": "  "}):
@@ -147,3 +154,33 @@ def test_random_website_cannot_connect(url):
 def test_donna_ui_origin_can_connect(url):
     with connect(url, origin="http://localhost:5173") as ws:
         assert ask(ws, "hi")[-1]["type"] == "assistant_message"
+
+
+def test_she_says_what_she_is_set_to_when_you_connect(url):
+    with connect(url) as ws:
+        first = start(ws)
+    assert first["type"] == "settings"
+    assert set(first["settings"]) == {"voice", "speed"}
+    assert isinstance(first["voices"], list)
+
+
+def test_a_settings_change_is_not_a_turn(url):
+    """Moving a control says nothing, remembers nothing, and ends no turn."""
+    with connect(url) as ws:
+        start(ws)
+        ws.send(json.dumps({"type": "settings_change", "settings": {"speed": 1.4}}))
+        reply = json.loads(ws.recv(timeout=5))
+        assert reply["type"] == "settings"
+        assert reply["settings"]["speed"] == 1.4
+        with pytest.raises(TimeoutError):
+            ws.recv(timeout=0.5)  # no state, nothing spoken
+
+
+def test_a_refused_setting_comes_back_as_it_really_is(url):
+    with connect(url) as ws:
+        start(ws)
+        ws.send(json.dumps({"type": "settings_change",
+                            "settings": {"speed": 99, "voice": "no-such-voice"}}))
+        reply = json.loads(ws.recv(timeout=5))
+    assert reply["settings"]["speed"] == 2.0  # clamped, not accepted
+    assert reply["settings"]["voice"] != "no-such-voice"

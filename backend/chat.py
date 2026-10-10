@@ -2,8 +2,9 @@
 
     python chat.py
 
-Typing a line sends it as a typed message. Starting a line with /say sends it
-as a spoken utterance instead:
+Typing a line sends it as a typed message. /voice <name> and /speed <number>
+change how she sounds. Starting a line with /say sends it as a spoken
+utterance instead:
 
     /say Hey Donna, open notepad
 
@@ -41,7 +42,11 @@ def show(message, streaming=False):
         if kind == "assistant_message":
             return False  # already printed, piece by piece
 
-    if kind == "transcript":
+    if kind == "settings":
+        voices = ", ".join(message["voices"]) or "none installed"
+        print(f"   (voice {message['settings']['voice']}, "
+              f"speed {message['settings']['speed']}x; available: {voices})")
+    elif kind == "transcript":
         print(f"You (heard) > {message['text']}")
     elif kind == "state":
         print(f"   ({message['name']})")
@@ -74,6 +79,14 @@ def main():
                 continue
             if not sys.stdin.isatty():  # input is piped from a file: show it
                 print(text)
+
+            if text.startswith("/voice ") or text.startswith("/speed "):
+                command, _, value = text.partition(" ")
+                key = "voice" if command == "/voice" else "speed"
+                websocket.send(json.dumps({"type": "settings_change",
+                                           "settings": {key: value if key == "voice" else float(value)}}))
+                show(json.loads(websocket.recv()))
+                continue
 
             spoken = text.startswith("/say ")
             if spoken:
