@@ -226,6 +226,65 @@ def test_thinking_can_be_turned_on(monkeypatch):
     assert "reasoning_effort" not in sent["body"]
 
 
+def fake_models(monkeypatch, pulled):
+    """Replace httpx.stream with a fake Ollama that only has `pulled` models.
+
+    Returns the list of models asked for, in order.
+    """
+    asked = []
+
+    @contextlib.contextmanager
+    def stream(method, url, json, timeout):
+        model = json["model"]
+        asked.append(model)
+        request = httpx.Request(method, url)
+        if model not in pulled:
+            body = '{"error":{"message":"model not found","type":"not_found_error"}}'
+            yield httpx.Response(404, text=body, request=request)
+        else:
+            yield httpx.Response(200, text=sse([text_chunk("Hi")]), request=request)
+
+    monkeypatch.setattr(httpx, "stream", stream)
+    monkeypatch.setattr(llm, "active_model", llm.MODEL)  # reset between tests
+    return asked
+
+
+def test_the_main_model_is_the_small_one():
+    """4b is faster AND picks tools more reliably on this GPU; 9b is only a safety net."""
+    assert llm.MODEL == "qwen3.5:4b"
+    assert llm.FALLBACK_MODEL == "qwen3.5:9b"
+
+
+def test_falls_back_when_the_main_model_is_not_pulled(monkeypatch):
+    asked = fake_models(monkeypatch, pulled={llm.FALLBACK_MODEL})
+    reply = llm.ollama_ask([{"role": "user", "content": "hi"}], [])
+    assert reply == {"role": "assistant", "content": "Hi"}
+    assert asked == [llm.MODEL, llm.FALLBACK_MODEL]
+
+
+def test_the_fallback_is_remembered(monkeypatch):
+    """Having found the main model missing once, don't 404 on it again every turn."""
+    asked = fake_models(monkeypatch, pulled={llm.FALLBACK_MODEL})
+    llm.ollama_ask([{"role": "user", "content": "hi"}], [])
+    llm.ollama_ask([{"role": "user", "content": "again"}], [])
+    assert asked == [llm.MODEL, llm.FALLBACK_MODEL, llm.FALLBACK_MODEL]
+
+
+def test_neither_model_pulled_says_what_to_run(monkeypatch):
+    fake_models(monkeypatch, pulled=set())
+    with pytest.raises(llm.LLMError, match=f"ollama pull {llm.MODEL}"):
+        llm.ollama_ask([{"role": "user", "content": "hi"}], [])
+
+
+def test_a_server_error_does_not_switch_models(monkeypatch):
+    """Only a missing model triggers the fallback: a 503 is a different problem."""
+    monkeypatch.setattr(llm, "active_model", llm.MODEL)
+    fake_stream(monkeypatch, status=503, body="model is loading")
+    with pytest.raises(llm.LLMError, match="503"):
+        llm.ollama_ask([{"role": "user", "content": "hi"}], [])
+    assert llm.active_model == llm.MODEL
+
+
 def test_ask_uses_fake_brain_when_asked(monkeypatch):
     monkeypatch.setenv("DONNA_LLM", "fake")
     assert llm.ask([{"role": "user", "content": "hi"}], [])["content"] == "Hello."

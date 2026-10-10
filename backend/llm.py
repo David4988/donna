@@ -18,6 +18,7 @@ Which brain answers is chosen with the DONNA_LLM environment variable:
 """
 
 import json
+import logging
 import os
 import re
 
@@ -26,7 +27,11 @@ import httpx
 # The model and where it runs. Ollama, llama.cpp's llama-server and LM Studio all
 # speak this same OpenAI-style API, so switching is just a different URL/model.
 # Check the exact model tag on your PC with `ollama list`.
-MODEL = os.environ.get("DONNA_MODEL", "qwen3.5:9b")
+#
+# 4b is the main model: on the RX 580 it is faster than 9b AND picks tools more
+# reliably (see PLAN.md 6a). 9b is the fallback, used only if 4b isn't pulled.
+MODEL = os.environ.get("DONNA_MODEL", "qwen3.5:4b")
+FALLBACK_MODEL = os.environ.get("DONNA_FALLBACK_MODEL", "qwen3.5:9b")
 URL = os.environ.get("DONNA_LLM_URL", "http://127.0.0.1:11434/v1/chat/completions")
 # The longest DONNA waits for the NEXT token, not for the whole reply: a big model
 # on a modest GPU can be slow on the first call while it loads.
@@ -35,6 +40,15 @@ TIMEOUT_SECONDS = 180
 
 class LLMError(Exception):
     """The model couldn't be reached, or sent back something we can't use."""
+
+
+class ModelNotPulled(Exception):
+    """That model isn't on this PC. Internal: callers see an LLMError."""
+
+
+# Which model we are actually talking to. If MODEL isn't pulled, the first call
+# switches this to FALLBACK_MODEL so later calls don't retry the same 404.
+active_model = MODEL
 
 
 def ask(messages, tools, *, on_delta=None):
@@ -53,7 +67,30 @@ def thinking_enabled():
 
 
 def ollama_ask(messages, tools, *, on_delta=None):
-    body = {"model": MODEL, "messages": messages, "stream": True}
+    """Ask the model, dropping to FALLBACK_MODEL if the main one isn't pulled."""
+    global active_model
+
+    candidates = [active_model]
+    if FALLBACK_MODEL and FALLBACK_MODEL != active_model:
+        candidates.append(FALLBACK_MODEL)
+
+    for model in candidates:
+        try:
+            reply = ask_model(model, messages, tools, on_delta)
+        except ModelNotPulled:
+            continue  # not on this PC: try the next one
+        if model != active_model:
+            logging.warning("%r isn't pulled; using %r from now on.", active_model, model)
+            active_model = model
+        return reply
+
+    raise LLMError(
+        f"Neither '{MODEL}' nor '{FALLBACK_MODEL}' is on this PC. Run:  ollama pull {MODEL}"
+    )
+
+
+def ask_model(model, messages, tools, on_delta):
+    body = {"model": model, "messages": messages, "stream": True}
     if tools:
         body["tools"] = tools
     if not thinking_enabled():
@@ -79,6 +116,9 @@ def ollama_ask(messages, tools, *, on_delta=None):
         raise LLMError("The model took too long to answer.") from None
     except httpx.HTTPStatusError as error:
         status = error.response.status_code
+        if status == 404:
+            # Ollama answers 404 "model ... not found" for a model that isn't pulled.
+            raise ModelNotPulled(model) from None
         raise LLMError(f"The model server said {status}: {error.response.text[:200]}") from None
     except (KeyError, IndexError, ValueError):
         raise LLMError("The model sent back something DONNA couldn't read.") from None
