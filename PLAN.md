@@ -209,7 +209,8 @@ I merged your "Python backend" and "WebSocket connection" steps into Step 2, bec
 - **Step 9.5 (streaming).** `llm.py` reads Ollama's reply as it arrives and the agent forwards
   each piece as `assistant_delta`. First word in **0.19s** instead of 6.2s of blank panel. It
   needed no concurrency — see decision 1.
-- **Step 10 (voice).** ~~Push-to-talk.~~ **Not push-to-talk.** The goal is a conversation: you
+- **Step 10 (voice).** Full design: [`docs/superpowers/specs/2026-10-10-voice-10a-design.md`](docs/superpowers/specs/2026-10-10-voice-10a-design.md).
+  ~~Push-to-talk.~~ **Not push-to-talk.** The goal is a conversation: you
   talk, she answers, you keep going without re-triggering anything — the way Claude's or
   ChatGPT's voice mode feels. Decided so far:
 
