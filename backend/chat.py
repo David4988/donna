@@ -1,6 +1,15 @@
 """Talk to DONNA from the terminal. Start `python server.py` first, then:
 
     python chat.py
+
+Typing a line sends it as a typed message. Starting a line with /say sends it
+as a spoken utterance instead:
+
+    /say Hey Donna, open notepad
+
+With DONNA_STT=fake on the server, the bytes of that line are what she "hears",
+so the whole voice path can be driven from here with no microphone and no
+speech model. Audio she sends back is reported as its length.
 """
 
 import json
@@ -32,7 +41,11 @@ def show(message, streaming=False):
         if kind == "assistant_message":
             return False  # already printed, piece by piece
 
-    if kind == "tool_call":
+    if kind == "transcript":
+        print(f"You (heard) > {message['text']}")
+    elif kind == "state":
+        print(f"   ({message['name']})")
+    elif kind == "tool_call":
         print(f"   [{message['name']}] {json.dumps(message['args'])}")
     elif kind == "tool_result":
         print("   " + message["result"].replace("\n", "\n   "))
@@ -62,14 +75,35 @@ def main():
             if not sys.stdin.isatty():  # input is piped from a file: show it
                 print(text)
 
-            websocket.send(json.dumps({"type": "user_message", "text": text}))
+            spoken = text.startswith("/say ")
+            if spoken:
+                # A spoken utterance. With DONNA_STT=fake these bytes are the
+                # transcript, so this drives the voice path with no microphone.
+                websocket.send(text[len("/say ") :].encode())
+            else:
+                websocket.send(json.dumps({"type": "user_message", "text": text}))
 
-            # Print everything DONNA sends until her final reply.
-            streaming = False
+            # Print everything DONNA sends until the turn ends. A turn ends with
+            # `state` going back to "awake" after the final reply, because her
+            # last sentence is synthesised after its text is already on screen.
+            # An utterance she wasn't meant to hear gets no reply at all, so the
+            # first frame of a spoken turn is given a short deadline.
+            streaming, final_seen, anything = False, False, False
             while True:
-                message = json.loads(websocket.recv())
+                try:
+                    frame = websocket.recv(timeout=10 if spoken and not anything else 300)
+                except TimeoutError:
+                    print("   (she ignored that: not addressed to her, or no speech in it)")
+                    break
+                anything = True
+                if isinstance(frame, bytes):
+                    print(f"   [{len(frame) / 2 / 22050:.1f}s of audio]")
+                    continue
+                message = json.loads(frame)
                 streaming = show(message, streaming)
                 if message["type"] in ("assistant_message", "error"):
+                    final_seen = True
+                elif final_seen and message["type"] == "state":
                     break
 
 

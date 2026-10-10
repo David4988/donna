@@ -1,0 +1,12 @@
+# DONNA's ears and voice.
+#
+# Deliberately NOT in requirements.txt and NOT installed in CI: faster-whisper
+# pulls ctranslate2 and piper-tts pulls onnxruntime, about 250 MB of wheels for
+# code the tests never run (they use DONNA_STT=fake and DONNA_TTS=fake). CI's
+# pip cache is keyed on requirements.txt, so leaving that file alone keeps the
+# backend job exactly as fast as it is today.
+#
+# Install on the machine that actually has a microphone:
+#     pip install -r requirements-voice.txt
+faster-whisper>=1.1,<2   # speech to text, on the CPU
+piper-tts>=1.3,<2        # text to speech, in-process (native Windows wheel)
