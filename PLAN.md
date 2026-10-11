@@ -221,6 +221,31 @@ definitions plus ~30 generated tokens of call at 17 tok/s. The budget in §9 is 
 answer. Speaking a holding phrase while the tool runs is the only lever left worth much, and it
 is a voice-layer change rather than a search one — see §10B.
 
+Two things found by running it live rather than on the bench, both worth knowing:
+
+**Search time is genuinely variable, and the timeout is not the lever.** The same query took
+16.3s and then 3.4s a minute apart, as engines rate-limit per IP. Capping `TIMEOUT_SECONDS`
+looks like the obvious fix and measures the opposite, because a short timeout makes the quick
+engine give up and forces the slow fallback:
+
+| | mean | worst | failed |
+|---|---|---|---|
+| `timeout=10s` | **2.41s** | **4.53s** | **0/6** |
+| `timeout=5s` | 2.92s | 5.21s | 3/6 |
+| `timeout=3s` | 4.05s | 7.35s | 2/6 |
+
+So it stays at 10, with a comment in `tools.py` saying why. One slow search is not evidence of
+anything — measure over several queries.
+
+**`web_search` cannot answer "what's the weather", and that is not a latency problem.** Real
+snippets are page *descriptions*, not data: "Hourly weather forecast in London. Check current
+conditions", "14-day weather forecast for London". Not one contains a temperature. Asked live,
+she correctly said she has no real-time weather access and named two sites — honest, and the
+right behaviour. Worth noting because the style benchmark fed her *synthetic* snippets
+containing "Today 14C with light rain", so it was measuring a best case that search does not
+actually deliver. Anything needing live numbers — weather, prices, scores — needs a real API,
+not a snippet.
+
 **The flatness is Piper itself, not the script.** The words were a smaller part of it than
 expected: 11/12 of the model's tool-result summaries were already clean conversational prose
 before the prompt was touched. The spoken-style paragraph takes that to 12/12 and buys real

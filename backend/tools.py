@@ -130,6 +130,19 @@ def modified_time(path):
 # is in the first sentence or two of a snippet, never in paragraph nine.
 WEB_RESULTS = 4
 BODY_CHARS = 300
+
+# Leave this at 10. Lowering it looks like the obvious way to cap a slow
+# search and measured the opposite, over six queries:
+#
+#     timeout=10s   mean 2.41s   worst 4.53s   failed 0/6
+#     timeout= 5s   mean 2.92s   worst 5.21s   failed 3/6
+#     timeout= 3s   mean 4.05s   worst 7.35s   failed 2/6
+#
+# A short timeout makes the quick engine give up, which forces the slow
+# fallback, which costs more than the wait it saved. Search time is also
+# genuinely variable -- the same query took 16.3s and then 3.4s a minute
+# apart, as engines rate-limit per IP -- so one slow search is not evidence
+# of anything. Measure over several queries before touching this.
 TIMEOUT_SECONDS = 10
 
 # Which engine answers. Measured from this PC: "auto" asks several engines in
