@@ -7,6 +7,7 @@ installed.
     strip_wake_phrase() take the summons off the front of what she heard
     take_sentences(s)   which part of a half-written reply can be spoken yet?
     for_speech(text)    the same words, with things Piper shouldn't read aloud removed
+    say_numbers(text)   units and prices as words, because Piper spells them out
     is_garbage(heard)   did the microphone pick up anything that was actually speech?
     echoes(said, heard) is this DONNA hearing herself through the speakers?
 
@@ -146,6 +147,65 @@ WINDOWS_PATH = re.compile(r"[A-Za-z]:\\[^\s,;]+")
 MARKUP = re.compile(r"[*_`#>~|]+")
 BULLET = re.compile(r"^\s*[-*+]\s+", re.MULTILINE)
 
+# Things Piper says wrong, each one found by phonemising it with the real
+# voice rather than guessed at:
+#
+#     "20C"     -> "twenty SEE"              "12 mph"  -> "twelve EM-PEE-AITCH"
+#     "20F"     -> "twenty EF"               "5 km/h"  -> "five KAY-EM SLASH AITCH"
+#     "1.5kg"   -> "one point five KAY-JEE"  "$14.50"  -> "DOLLAR fourteen point five zero"
+#
+# Piper has no pronunciation dictionary we can reach from here, so the only
+# fix is to hand it words instead of symbols. Every replacement below was
+# phonemised too, to check it actually reads better.
+#
+# What Piper already gets right is deliberately absent: "3.4GHz" is
+# "gigahertz", "70%" is "percent", "500MB" is "em-bee" (which is what people
+# say out loud anyway), "e.g." is "for example", "JSON" is "jay-sawn",
+# "README" is "reed-me", and every name in this project -- Ollama, Tauri,
+# Qwen, Piper, DONNA, Jarvis -- is correct already. Don't add rules for those.
+SCALES = {"C": "Celsius", "F": "Fahrenheit"}
+DEGREES = re.compile(r"(-?\d+(?:\.\d+)?)\s*(?:°\s*)?([CF])\b")
+BARE_DEGREES = re.compile(r"(-?\d+(?:\.\d+)?)\s*°")
+
+CURRENCIES = {"$": "dollars", "£": "pounds", "€": "euros"}
+MONEY = re.compile(r"([$£€])\s?(\d+(?:,\d{3})*)(?:\.(\d{2}))?")
+
+# Only units measured to be wrong. Each is read as its letters without this.
+UNIT_WORDS = {
+    "mph": "miles per hour",
+    "km/h": "kilometres per hour",
+    "kph": "kilometres per hour",
+    "kg": "kilograms",
+    "km": "kilometres",
+    "cm": "centimetres",
+    "mm": "millimetres",
+    "ml": "millilitres",
+    "ft": "feet",
+    "lb": "pounds",
+}
+# Longest first, so "km/h" is never matched as "km". Must follow a digit, so
+# the "ml" in a filename or the "ft" in a sentence is left alone.
+UNITS = re.compile(
+    r"(?<=\d)\s*(" + "|".join(sorted(UNIT_WORDS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def say_numbers(text):
+    """Units, temperatures and prices as words, because Piper spells them out."""
+
+    def money(match):
+        symbol, whole, cents = match.group(1), match.group(2).replace(",", ""), match.group(3)
+        name = CURRENCIES[symbol]
+        if cents and cents != "00":
+            return f"{whole} {name} {cents}"
+        return f"{whole} {name}"
+
+    text = MONEY.sub(money, text)
+    text = DEGREES.sub(lambda m: f"{m.group(1)} degrees {SCALES[m.group(2).upper()]}", text)
+    text = BARE_DEGREES.sub(lambda m: f"{m.group(1)} degrees", text)
+    return UNITS.sub(lambda m: " " + UNIT_WORDS[m.group(1).lower()], text)
+
 
 def for_speech(text):
     """The same words, with the things Piper should not read out loud removed.
@@ -159,6 +219,9 @@ def for_speech(text):
     text = WINDOWS_PATH.sub(lambda match: " " + match.group(0).rsplit("\\", 1)[-1] + " ", text)
     text = BULLET.sub("", text)
     text = MARKUP.sub("", text)
+    # Before the emoji strip, not after: the degree sign is itself category
+    # "So", so stripping first would silently turn "20 °C" into "20 C".
+    text = say_numbers(text)
     text = "".join(c for c in text if unicodedata.category(c) != "So")  # emoji
     return " ".join(text.split())
 

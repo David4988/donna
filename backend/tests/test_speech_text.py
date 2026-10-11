@@ -92,6 +92,57 @@ def test_emoji_are_not_read_out():
     assert speech_text.for_speech("Done ✨") == "Done"
 
 
+# ---------------------------------------------------------------- say_numbers
+
+# Each expectation here is what Piper was MEASURED to say wrong: "20C" came
+# out as "twenty see", "12 mph" as "twelve em-pee-aitch".
+
+
+@pytest.mark.parametrize(
+    "written, spoken",
+    [
+        ("It's 20C out.", "It's 20 degrees Celsius out."),
+        ("It's 20°C out.", "It's 20 degrees Celsius out."),
+        ("It's 20 °C out.", "It's 20 degrees Celsius out."),
+        ("A high of 68F.", "A high of 68 degrees Fahrenheit."),
+        ("Down to -5C tonight.", "Down to -5 degrees Celsius tonight."),
+        ("Around 21.5C.", "Around 21.5 degrees Celsius."),
+        ("A 90° turn.", "A 90 degrees turn."),
+        ("Winds at 12 mph.", "Winds at 12 miles per hour."),
+        ("Doing 50km/h.", "Doing 50 kilometres per hour."),
+        ("It weighs 1.5kg.", "It weighs 1.5 kilograms."),
+        ("About 30cm wide.", "About 30 centimetres wide."),
+        ("That costs $14.50.", "That costs 14 dollars 50."),
+        ("That costs $14.", "That costs 14 dollars."),
+        ("Exactly $14.00.", "Exactly 14 dollars."),
+        ("It was £1,500.", "It was 1500 pounds."),
+    ],
+)
+def test_piper_is_handed_words_instead_of_symbols(written, spoken):
+    assert speech_text.for_speech(written) == spoken
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The file is config.json.",
+        "It runs at 3.4GHz.",
+        "Battery is at 70%.",
+        "The drive holds 500MB.",
+        "Check the README.",
+        "Qwen runs under Ollama.",
+    ],
+)
+def test_what_piper_already_says_correctly_is_left_alone(text):
+    """Measured as correct, so a rule for it could only make things worse."""
+    assert speech_text.for_speech(text) == text
+
+
+def test_a_unit_needs_a_number_in_front_of_it():
+    """Otherwise ordinary words get mangled: "left" is not "lefeet"."""
+    assert speech_text.for_speech("I left the ml file.") == "I left the ml file."
+
+
 # ---------------------------------------------------------------- is_garbage
 
 

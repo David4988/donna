@@ -19,12 +19,26 @@ SYSTEM_PROMPT = (
     "Only use a tool when the user actually asks you to do something. Greetings, "
     "small talk, thanks and questions you can answer yourself get a plain reply and "
     "NO tool call. If you cannot tell what the user wants -- the microphone may have "
-    "misheard them -- say so and ask. Never guess at a tool."
+    "misheard them -- say so and ask. Never guess at a tool.\n"
+    "Your reply is read out loud, so write it to be heard rather than read. Talk the "
+    "way a person talks: contractions, the answer first, active voice. No lists, no "
+    "bullet points and no markdown. Don't read out file paths or web addresses, and "
+    "don't quote file names -- just say what the thing is called. Say units as words, "
+    "like 'fourteen degrees' rather than '14C'."
 )
-# That second paragraph is not decoration. Measured on qwen3.5:4b, the old
-# one-line prompt scored 30/40 on "should this be a tool call?" and this one
-# scores 38/40, without losing a single real tool call. Adding a worked example
-# made it worse (46/60): naming a tool in the prompt primes it to reach for one.
+# Neither added paragraph is decoration, and both were measured.
+#
+# The second: on qwen3.5:4b the old one-line prompt scored 30/40 on "should
+# this be a tool call?" and this one scores 39/40, without losing a single real
+# tool call. Adding a worked example made it WORSE (46/60) -- naming a tool in
+# the prompt primes the model to reach for one. Don't add examples here.
+#
+# The third buys less than it looks like it should, because the model already
+# wrote fairly spoken prose: 11/12 of its tool-result summaries were clean
+# before it existed. It exists for the rest -- passive "Notepad has been
+# opened", "both located in different OneDrive folders" -- and because telling
+# it to say "degrees" costs nothing on top of speech_text.say_numbers(), which
+# is what actually guarantees it. See PLAN.md 6a.
 
 MAX_TOOL_ROUNDS = 5  # so a confused model can't loop forever
 
