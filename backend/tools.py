@@ -116,27 +116,80 @@ def modified_time(path):
 # ---------------------------------------------------------------- web_search
 
 # ddgs searches DuckDuckGo (and similar engines) with no API key. Read-only.
-WEB_RESULTS = 5
+#
+# A search turn used to be the slowest thing DONNA did, and the network was
+# never the main reason. What costs the time is her READING the results back:
+# at the measured 169 tokens/second of prompt processing (PLAN.md 6a), every
+# 170 tokens of snippet is another second before she says a word.
+#
+# Measured, five results for "what is openwakeword" came back as 8,918
+# characters -- about 2,200 tokens, or 13 seconds. Four of the five snippets
+# were under 240 characters; the fifth was a GitHub README dumped whole at
+# 8,111, which is 97% of the payload and says nothing the other four didn't.
+# So the fix is a cap, and it costs nothing: the answer to a spoken question
+# is in the first sentence or two of a snippet, never in paragraph nine.
+WEB_RESULTS = 4
+BODY_CHARS = 300
+TIMEOUT_SECONDS = 10
+
+# Which engine answers. Measured from this PC: "auto" asks several engines in
+# parallel and averages 3.3s; "yahoo" alone averages 1.0s. Neither is safe on
+# its own -- they are independently flaky, and each failed on queries the
+# other answered -- so ask the quick one first and fall back to the broad set.
+# That is faster than "auto" when it hits and no worse when it misses, and if
+# yahoo is ever blocked outright this degrades to exactly today's behaviour.
+BACKENDS = ("yahoo", "auto")
 
 
 def web_search(query):
     query = query.strip()
     if not query:
         return "Error: tell me what to search for."
-    try:
-        results = DDGS(timeout=10).text(query, max_results=WEB_RESULTS)
-    except Exception as error:
-        first_line = str(error).splitlines()[0] if str(error) else type(error).__name__
-        return f"Error: the web search failed ({first_line[:150]})."
+
+    results, problem = find_results(query)
+    if problem:
+        return f"Error: the web search failed ({problem})."
     if not results:
         return f"No web results for '{query}'."
 
     lines = [f"Web results for '{query}':"]
     for number, result in enumerate(results, start=1):
         lines.append(f"{number}. {result.get('title', '')}")
-        lines.append(f"   {result.get('href', '')}")
-        lines.append(f"   {result.get('body', '')}")
+        lines.append(f"   {where_from(result.get('href', ''))}")
+        lines.append(f"   {clip(result.get('body', ''))}")
     return "\n".join(lines)
+
+
+def find_results(query):
+    """Results from the first engine that answers. Returns (results, problem)."""
+    problem = None
+    for backend in BACKENDS:
+        try:
+            results = DDGS(timeout=TIMEOUT_SECONDS).text(
+                query, max_results=WEB_RESULTS, backend=backend
+            )
+        except Exception as error:
+            # "no results" arrives as an exception here, so a failure is only
+            # worth reporting once every engine has had a go.
+            problem = str(error).splitlines()[0][:150] if str(error) else type(error).__name__
+            continue
+        if results:
+            return results, None
+    return [], problem
+
+
+def clip(body):
+    """Enough of a snippet to answer from, cut at a word."""
+    if len(body) <= BODY_CHARS:
+        return body
+    cut = body.rfind(" ", 0, BODY_CHARS)
+    return body[: cut if cut > 0 else BODY_CHARS].rstrip(" ,;:") + "..."
+
+
+def where_from(href):
+    """Just the site. The full URL is a dozen tokens she is told not to read."""
+    without_scheme = href.split("://", 1)[-1]
+    return without_scheme.split("/", 1)[0] or href
 
 
 # ---------------------------------------------------------------- for the LLM

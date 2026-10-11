@@ -117,32 +117,82 @@ class FakeDDGS:
         {"title": "Tauri on GitHub", "href": "https://github.com/tauri-apps", "body": "Source."},
     ]
     error = None
+    fails = ()  # backends that raise, so a fallback can be tested
+    asked = []  # every backend asked, in order
 
     def __init__(self, timeout):
         pass
 
-    def text(self, query, max_results):
+    def text(self, query, max_results, backend="auto"):
+        FakeDDGS.asked.append(backend)
         if self.error:
             raise self.error
+        if backend in self.fails:
+            raise RuntimeError("No results found.")
         return self.results[:max_results]
 
 
-def test_web_search_formats_results(monkeypatch):
+@pytest.fixture
+def searched(monkeypatch):
+    """A fake search client with its record of asked backends emptied."""
+    monkeypatch.setattr(FakeDDGS, "asked", [])
     monkeypatch.setattr(tools, "DDGS", FakeDDGS)
+    return FakeDDGS
+
+
+def test_web_search_formats_results(searched):
     assert tools.web_search("tauri") == (
         "Web results for 'tauri':\n"
-        "1. Tauri 2.0\n   https://v2.tauri.app\n   Build desktop apps.\n"
-        "2. Tauri on GitHub\n   https://github.com/tauri-apps\n   Source."
+        "1. Tauri 2.0\n   v2.tauri.app\n   Build desktop apps.\n"
+        "2. Tauri on GitHub\n   github.com\n   Source."
     )
 
 
-def test_web_search_network_error(monkeypatch):
+def test_only_the_site_is_shown_not_the_whole_url(searched):
+    """The full URL is a dozen tokens she is told not to read out anyway."""
+    assert "https://" not in tools.web_search("tauri")
+    assert "/tauri-apps" not in tools.web_search("tauri")
+
+
+def test_the_quick_engine_is_asked_first(searched):
+    tools.web_search("tauri")
+    assert searched.asked == ["yahoo"]  # it answered, so "auto" was never needed
+
+
+def test_a_failing_engine_falls_back_to_the_broad_set(searched, monkeypatch):
+    monkeypatch.setattr(FakeDDGS, "fails", ("yahoo",))
+    assert "Tauri 2.0" in tools.web_search("tauri")
+    assert searched.asked == ["yahoo", "auto"]
+
+
+def test_web_search_network_error(searched, monkeypatch):
     monkeypatch.setattr(FakeDDGS, "error", RuntimeError("no internet"))
-    monkeypatch.setattr(tools, "DDGS", FakeDDGS)
     assert tools.web_search("tauri") == "Error: the web search failed (no internet)."
 
 
-def test_web_search_no_results(monkeypatch):
+def test_web_search_no_results(searched, monkeypatch):
     monkeypatch.setattr(FakeDDGS, "results", [])
-    monkeypatch.setattr(tools, "DDGS", FakeDDGS)
     assert tools.web_search("xyzzy") == "No web results for 'xyzzy'."
+
+
+def test_every_engine_is_tried_before_giving_up(searched, monkeypatch):
+    monkeypatch.setattr(FakeDDGS, "fails", ("yahoo", "auto"))
+    assert tools.web_search("xyzzy").startswith("Error: the web search failed")
+    assert searched.asked == ["yahoo", "auto"]
+
+
+def test_a_huge_snippet_is_clipped(searched, monkeypatch):
+    """One GitHub README dumped whole was 8,111 characters: 13 seconds of reading."""
+    monkeypatch.setattr(
+        FakeDDGS,
+        "results",
+        [{"title": "openWakeWord", "href": "https://github.com/dscripka", "body": "word " * 2000}],
+    )
+    result = tools.web_search("openwakeword")
+    assert len(result) < 500
+    assert result.endswith("...")
+
+
+def test_a_normal_snippet_is_left_whole(searched):
+    """Four of five real snippets were already short. Only the outlier is cut."""
+    assert tools.web_search("tauri").endswith("Source.")
