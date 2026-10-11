@@ -4,6 +4,29 @@
 
 export type Sound = { voice: string; speed: number };
 
+const REGIONS: Record<string, string> = { en_US: "American", en_GB: "British" };
+
+/**
+ * A Piper voice id as something worth reading in a menu.
+ *
+ * The id stays the value -- it is what the backend loads -- so this is purely
+ * what you see: "en_GB-jenny_dioco-medium" is fine as a filename and no way
+ * to label a list of six.
+ *
+ * "richer" is Piper's "high" quality. It is not free: measured on this PC a
+ * high voice synthesises a sentence in 0.70s against a medium voice's 0.14s,
+ * which is about half a second more before she starts talking.
+ */
+export function voiceLabel(id: string): string {
+  const [region, name, quality] = id.split("-");
+  if (!name) return id; // not a voice id we recognise; show it as it is
+  const person = name.split("_")[0];
+  const spoken = person.charAt(0).toUpperCase() + person.slice(1);
+  const where = REGIONS[region];
+  const detail = [where, quality === "high" ? "richer" : null].filter(Boolean).join(", ");
+  return detail ? `${spoken} — ${detail}` : spoken;
+}
+
 export default function Settings({
   sound,
   voices,
@@ -27,7 +50,7 @@ export default function Settings({
           {voices.length === 0 && <option>none installed</option>}
           {voices.map((voice) => (
             <option key={voice} value={voice}>
-              {voice}
+              {voiceLabel(voice)}
             </option>
           ))}
         </select>
