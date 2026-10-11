@@ -40,22 +40,39 @@ after you stop. Measured first-word latency is recorded in `PLAN.md` §6a.
 
 ## 2. The shape of a turn
 
-No hotkey and no wake-word model. **Whisper itself is the wake word**: the window's
+> **Superseded, 2026-10-11.** Two of this section's decisions did not survive being built.
+> The corrections are kept inline below in the house style rather than rewritten away, because
+> the reasoning that turned out to be wrong is the useful part.
+>
+> 1. **There is a wake-word model now: openWakeWord's pretrained `hey_jarvis`**, in
+>    `backend/wake.py`, and Whisper only runs once it has fired. The summons is
+>    *"Hey Jarvis"*, not *"Hey Donna"* — she is still called DONNA, only the summons
+>    changed, because a pretrained model for it already exists and training "Hey Donna" is
+>    a side project (PLAN.md step 10C). This is what retired the standing risk that *"an open
+>    mic in a room with a TV pins a core"*: Whisper no longer transcribes every door slam.
+> 2. **Silero VAD was dropped for a ~90-line energy gate** in `audio.ts`. Vite, `vad-react`
+>    and onnxruntime's WebAssembly disagree three ways — it works in a production build and
+>    fails in the dev server. The wake word is what decides whether she answers, so a rough
+>    gate costs CPU rather than correctness. It also removed 45 MB of runtime assets and took
+>    the bundle from 657 kB to 225 kB. Swapping Silero back in means replacing one class.
+
+~~No hotkey and no wake-word model. **Whisper itself is the wake word**: the window's
 voice-activity detector catches an utterance, Python transcribes it, and if it begins with her
-name she wakes. Any words after the name are the first command, so "Hey Donna, open notepad" is
-one step rather than two.
+name she wakes.~~ Any words after the name are the first command, so "Hey Jarvis, open notepad"
+is one step rather than two — that part held, and `speech_text.strip_wake_phrase()` does it.
 
 ```text
             ┌─────────── Tauri window (a sensor) ───────────┐
             │  mic always on (echo cancellation + denoise)  │
             │        │                                      │
-            │   Silero VAD ──▶ one finished utterance ──────┼──▶ binary PCM16 @16k
+            │   energy gate ──▶ one finished utterance ─────┼──▶ binary PCM16 @16k
+            │              └──▶ a growing prefix ───────────┼──▶ b"DONNAPRT" + PCM16
             │   speaker  ◀── scheduled audio queue ◀────────┼─── binary PCM16 @22050
             └───────────────────────────────────────────────┘
 
    Python, per connection:
 
-        ASLEEP ──("…Donna, open notepad")──▶ AWAKE ──▶ SPEAKING
+        ASLEEP ──(wake.py hears "Hey Jarvis")──▶ AWAKE ──▶ SPEAKING
            ▲                                   │           │
            └────── 30s with nothing said ──────┘           │
            ▲                                               │
@@ -509,25 +526,38 @@ Each stage ends in something runnable, and each failure lands on a small surface
 - **Nothing but arithmetic ends SPEAKING.** `TAIL_SECONDS` too small and she clips her last word
   or wakes on it; too large and she feels sluggish. One constant, tuned by ear at Stage 8, and
   load-bearing for the risk above.
-- **The wake word's false-negative rate is unknowable before Stage 7b**, and it changes with the
-  Whisper model — swapping `stt.MODEL` can silently break waking. Every rejected transcript is
-  logged at DEBUG so `NAMES` can be tuned from real data. **Expect to edit that set**, which is
-  why it is a one-line module constant with a comment saying so.
-- **Whisper latency is the budget's biggest unknown** and the one thing software cannot fix
-  later. Stage 0 exists solely for it.
-- **An open mic in a room with a TV pins a core** — Whisper runs on every utterance, not just
+- ~~**The wake word's false-negative rate is unknowable before Stage 7b**, and it changes with
+  the Whisper model — swapping `stt.MODEL` can silently break waking. Every rejected transcript
+  is logged at DEBUG so `NAMES` can be tuned from real data.~~ **Retired:** waking no longer
+  depends on Whisper's spelling at all. openWakeWord scored 0.996–0.999 on wake phrases and
+  0.000–0.005 on non-wake audio, with `THRESHOLD = 0.5` — a gap wide enough that the constant
+  is not delicate. `speech_text.JARVIS` survives only to *trim* the summons off the front, so a
+  missing spelling now costs a stray word rather than being ignored. **Still untested against a
+  human voice in a room with a television**; that is the one measurement outstanding.
+- ~~**Whisper latency is the budget's biggest unknown** and the one thing software cannot fix
+  later. Stage 0 exists solely for it.~~ **Measured and comfortable:** `base.en` 0.44s,
+  `tiny.en` 0.23–0.27s. `tiny.en` is used for the live partials and is *better* on short audio.
+- ~~**An open mic in a room with a TV pins a core** — Whisper runs on every utterance, not just
   yours. Acceptable on a 5800X, and precisely why a real wake-word model (10C) is worth having
-  eventually. It is a CPU optimisation, not a missing capability.
+  eventually.~~ **Fixed:** this is what `wake.py` bought. Whisper only runs once the wake word
+  has fired, so the television is scored by a ~200 KB classifier instead of transcribed.
+- **The voice sample rate is hardcoded in two places that must agree** — `tts.SAMPLE_RATE` and
+  `audio.ts`'s `VOICE_RATE`, both 22050, with `installed_voices()` filtering out any voice that
+  disagrees. This is the single thing blocking Kokoro, which is 24000 Hz (PLAN.md §6a.2).
+  Carrying the rate on the wire retires the filter and opens up Piper's 16000 Hz voices too.
 - **Two clients at once means two voices.** `agent.handle` now holds its connection thread for
   15+ seconds. Nobody runs the UI and `chat.py` simultaneously; noted rather than defended
   against.
 
 ### Constants that will need tuning
 
-| | default | tuned at |
-|---|---|---|
-| `stt.MODEL` | `base.en` | Stage 0 |
-| `voice.SILENCE_SECONDS` | 30 | Stage 8, by feel |
-| `voice.TAIL_SECONDS` | 0.25 | Stage 8, by ear |
-| `speech_text.NAMES` | 10 spellings | Stage 7b, from real data |
-| `speech_text.MAX_SENTENCE_CHARS` | 240 | only if a reply stalls |
+| | default | tuned at | outcome |
+|---|---|---|---|
+| `stt.MODEL` | `base.en` | Stage 0 | kept; 0.44s measured |
+| `voice.SILENCE_SECONDS` | 30 | Stage 8, by feel | kept |
+| `voice.TAIL_SECONDS` | 0.25 | Stage 8, by ear | kept |
+| ~~`speech_text.NAMES`~~ | ~~10 spellings~~ | ~~Stage 7b~~ | deleted; `wake.py` decides |
+| `wake.THRESHOLD` | 0.5 | Stage A | kept; 0.996 vs 0.005 is a wide gap |
+| `speech_text.MAX_SENTENCE_CHARS` | 240 | only if a reply stalls | never needed |
+| `audio.MAX_UTTERANCE_SECONDS` | ~~20~~ → 19 | found by a bug | 20 overshot the backend's cap and **silently dropped** full-length utterances |
+| `tools.BODY_CHARS` | 300 | 2026-10-11 | one snippet was 8,111 chars = 13s of reading |

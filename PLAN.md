@@ -161,6 +161,109 @@ Three findings that change decisions:
 Generation speed is memory-bandwidth bound on a 2016 card; ~17 tok/s is the ceiling and no
 setting moves it. The lever is model size, which is why 4b is the one worth having.
 
+### 6a.1 How she sounds (measured 2026-10-11)
+
+Three complaints after the first real use of voice: web search felt slow, the voices were a
+menu of one, and *"it doesn't feel like a conversation and more like blandly reading a
+sentence."* All three were measured before anything was changed, and two of the three answers
+were not what they looked like.
+
+**Piper voices.** Synthesising one sentence, after a warm load:
+
+| | load | one sentence | vs realtime |
+|---|---|---|---|
+| `medium` voices (amy, alan, jenny) | ~2.9s | **0.14s** | 40x |
+| `high` voices (lessac, cori, ryan) | ~3.0s | **0.70s** | 7.2x |
+
+A `high` voice therefore costs about **+0.55s before she starts talking**. It never starves
+playback — 7x realtime is still far ahead of the speaker — so this is a first-word cost, not a
+stuttering one. The default stays a `medium` voice and the menu says "richer" for the others.
+
+**Pronunciation.** Phonemising candidates with the real voice shows what Piper does, rather
+than what one would assume. Wrong, and now fixed in `speech_text.say_numbers()`:
+
+| written | Piper said | now |
+|---|---|---|
+| `20C` / `20°C` | "twenty **see**" | "twenty degrees Celsius" |
+| `20F` | "twenty **ef**" | "twenty degrees Fahrenheit" |
+| `12 mph` | "twelve **em-pee-aitch**" | "twelve miles per hour" |
+| `5 km/h` | "five **kay-em slash aitch**" | "five kilometres per hour" |
+| `1.5kg` | "one point five **kay-jee**" | "one point five kilograms" |
+| `$14.50` | "**dollar** fourteen point five zero" | "fourteen dollars fifty" |
+
+Already correct and deliberately left alone: `3.4GHz` ("gigahertz"), `70%` ("percent"),
+`500MB` ("em-bee", which is what people say), `e.g.` ("for example"), `JSON` ("jay-sawn"),
+`README` ("reed-me"), and every name in this project — Ollama, Tauri, Qwen, Piper, DONNA,
+Jarvis. Adding rules for those could only make them worse.
+
+**Web search.** The network was the smaller half. Reading the results back is the cost: at
+169 tok/s of prompt processing, every 170 tokens of snippet is another second of silence. Five
+results for *"what is openwakeword"* came back as 8,918 characters — about 2,200 tokens, or
+13 seconds — and 8,111 of those were one GitHub README dumped whole, while the other four
+snippets were all under 240 characters. Hence the 300-character cap.
+
+The engine choice corrected a guess made from a stale log. Pinning to DuckDuckGo — which that
+log showed answering after Google and Brave were refused — **fails outright** from this PC now;
+`auto` is what makes search work at all. But `auto` asks several engines in parallel and
+averages 3.3s where `yahoo` alone averages 1.0s, and they are independently flaky, each failing
+on queries the other answered. So: quick engine first, broad set as the fallback.
+
+Interleaved old-vs-new over three queries, in one process:
+
+| | first spoken word | handed to the model |
+|---|---|---|
+| 5 results, uncapped, `auto` | 11.98s | 378 tokens |
+| 4 results, 300 chars, `yahoo`→`auto` | **8.48s** | **280 tokens** |
+
+**A search turn cannot meet the 5s first-word budget on this hardware, and the search is no
+longer why.** The model spends 4–5s just deciding to call the tool: ~500 prompt tokens of tool
+definitions plus ~30 generated tokens of call at 17 tok/s. The budget in §9 is for a direct
+answer. Speaking a holding phrase while the tool runs is the only lever left worth much, and it
+is a voice-layer change rather than a search one — see §10B.
+
+**The flatness is Piper itself, not the script.** The words were a smaller part of it than
+expected: 11/12 of the model's tool-result summaries were already clean conversational prose
+before the prompt was touched. The spoken-style paragraph takes that to 12/12 and buys real
+brevity, but a fast VITS model reads rather than converses whichever voice it wears.
+
+### 6a.2 Kokoro: measured, and cheaper than feared (2026-10-11)
+
+The README has planned *"Piper → Kokoro — Piper for speed, Kokoro for that executive-assistant
+elegance"* since before voice existed. This is the speed half of that trade, measured on the
+identical sentence, best of five runs after a warm load:
+
+| engine / voice | synthesis | plays for | vs realtime | rate |
+|---|---|---|---|---|
+| piper `en_US-amy-medium` | **0.07s** | 2.86s | 41x | 22050 Hz |
+| piper `en_US-lessac-high` | 0.33s | 2.39s | 7.3x | 22050 Hz |
+| kokoro `af_heart` | 0.62s | 2.35s | 3.8x | **24000 Hz** |
+| kokoro `bf_emma` | 0.66s | 2.41s | 3.6x | **24000 Hz** |
+
+**Switching to Kokoro costs +0.55s on the first spoken word.** That is the whole latency
+argument, and it is affordable: a direct answer is STT 0.44s + model ~0.9s warm + TTS 0.07s
+≈ 1.4s today, so Kokoro makes it ≈1.95s against a 5s budget. The earlier worry that Kokoro
+"would eat into the budget" was overcautious — it costs about the same as a Piper `high` voice
+(+0.26s) and buys considerably more.
+
+Two findings that were not expected:
+
+1. **Kokoro loads faster than Piper** — 0.95s against ~2.9s — so startup gets *better*, not
+   worse, despite a 326 MB model against Piper's 63 MB.
+2. **Synthesis stays ahead of playback.** 3.8x realtime sounds tight next to Piper's 41x, but
+   the only requirement is beating 1x: on a three-sentence reply, sentences 2 and 3 were each
+   ready well before the previous one finished playing (0.76s of synthesis for 2.97s of audio).
+   So this is purely a first-word cost, never a stutter.
+
+**The blocker is the sample rate, not the speed.** Kokoro is 24000 Hz. `tts.SAMPLE_RATE` and
+`audio.ts`'s `VOICE_RATE` are both hardcoded to 22050, with `installed_voices()` actively
+filtering out anything else — so dropping Kokoro in today makes her a chipmunk. Carrying the
+rate on the wire is the unblocking change, and the 10A design already flagged it. It also
+retires `installed_voices()`'s rate filter and opens up Piper's `low` (16000 Hz) voices.
+
+Not adopted yet: it is a 326 MB model and a protocol change, and the quality half of the trade
+is the user's ear to judge, not a number. `kokoro-onnx` is installed in the backend venv for
+this evaluation and is deliberately **not** in `requirements-voice.txt`.
+
 ## 7. Development steps (each one ends with something you can run)
 
 | Step | Build | You can now… | Status |
