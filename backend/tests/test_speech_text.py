@@ -173,6 +173,58 @@ def test_what_you_actually_say_is_not_an_echo():
     assert not speech_text.echoes("", "Donna, hello")
 
 
+# Caught in a real log on 2026-10-12: she threw this question away TWICE,
+# because the old set-overlap test scored 6/6 = 1.00 -- every word of the
+# question appears somewhere in the reply she had just given. Any short
+# question built from common words did this, and the longer she talked the
+# more of them she discarded. It is indistinguishable from being ignored.
+HER_LONG_REPLY = (
+    "I don't know anything personal about you; I only see what you ask me "
+    "to do on your computer at the moment."
+)
+
+
+@pytest.mark.parametrize(
+    "heard",
+    [
+        "What do you know about me?",
+        "What do you do?",
+        "Do you know what time it is?",
+        "What can you see on my computer?",
+        "do you know me",
+    ],
+)
+def test_a_question_made_of_her_own_words_is_still_a_question(heard):
+    assert not speech_text.echoes(HER_LONG_REPLY, heard)
+
+
+@pytest.mark.parametrize(
+    "said, heard",
+    [
+        ("Hello. What can I do for you?", "What can I do for you"),
+        ("Hello. What can I do for you?", "Hello. What can I do for you?"),
+        ("Yes?", "Yes?"),
+        ("It's fourteen degrees in London today.", "fourteen degrees in London today"),
+    ],
+)
+def test_a_contiguous_run_of_her_own_words_is_an_echo(said, heard):
+    """What an echo physically is: a stretch of her sentence, in her order."""
+    assert speech_text.echoes(said, heard)
+
+
+@pytest.mark.parametrize(
+    "said, heard",
+    [
+        ("I can open applications like VS Code, Chrome, and notepad.", "open notepad"),
+        ("I found three budget files in your Documents folder.", "open the budget file"),
+        ("It's fourteen degrees in London today.", "what about tomorrow"),
+    ],
+)
+def test_a_follow_up_about_what_she_just_said_is_not_an_echo(said, heard):
+    """The case that matters most for a conversation: building on her answer."""
+    assert not speech_text.echoes(said, heard)
+
+
 # ---------------------------------------------------------------- is_small_talk
 
 

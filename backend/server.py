@@ -167,7 +167,21 @@ def start_logging():
     logging.basicConfig(
         level=level, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
     )
-    for noisy in ("httpx", "httpcore", "websockets", "faster_whisper", "urllib3", "numba"):
+    # The "2" variants are not a typo: this httpx ships its core as httpcore2
+    # and registers an httpx2 logger, and suppressing only the unsuffixed
+    # names left a DEBUG run full of TLS handshakes and response headers --
+    # which is exactly the run you are reading to count wake scores.
+    for noisy in (
+        "httpx",
+        "httpx2",
+        "httpcore",
+        "httpcore2",
+        "websockets",
+        "faster_whisper",
+        "urllib3",
+        "numba",
+        "huggingface_hub",
+    ):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 

@@ -14,6 +14,7 @@ installed.
 Deciding whether she was addressed at all is wake.py's job, not this file's.
 """
 
+import difflib
 import logging
 import re
 import unicodedata
@@ -246,6 +247,9 @@ def is_garbage(heard):
 # ---------------------------------------------------------------- echoes
 
 
+ECHO_RUN = 0.6  # this much of what was heard must be a run of her own words
+
+
 def echoes(said, heard):
     """Is this DONNA hearing her own voice through the speakers?
 
@@ -253,9 +257,26 @@ def echoes(said, heard):
     the system's render stream and loud external speakers can defeat it. The
     failure it prevents is a loop: she says her own name, hears it, and wakes
     herself up.
+
+    The test is an ordered, CONTIGUOUS run of her own words, which is what an
+    echo physically is -- the microphone picks up a stretch of her sentence in
+    the order she said it. A question of yours is not that, even when every
+    word in it also appears somewhere in her answer.
+
+    That distinction is not theoretical. The first version compared word SETS
+    and normalised by what was heard, and a real log caught it discarding
+    "What do you know about me?" -- twice, asked by the user -- because all
+    six of those words appear somewhere in the 20-word reply she had just
+    given, scoring 6/6 = 1.00. Any short question built from common words
+    does that, and the longer she talks the more of them she throws away. It
+    looks exactly like her ignoring you, which is the worst failure the voice
+    path has.
     """
-    spoken = set(bare(word) for word in said.split()) - {""}
-    back = set(bare(word) for word in heard.split()) - {""}
+    spoken = [bare(word) for word in said.split() if bare(word)]
+    back = [bare(word) for word in heard.split() if bare(word)]
     if not spoken or not back:
         return False
-    return len(back & spoken) / len(back) >= 0.6
+    run = difflib.SequenceMatcher(None, spoken, back).find_longest_match(
+        0, len(spoken), 0, len(back)
+    )
+    return run.size / len(back) >= ECHO_RUN
