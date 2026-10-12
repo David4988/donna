@@ -56,6 +56,7 @@ import os
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
+import soul
 import stt
 import tts
 import voice
@@ -172,6 +173,7 @@ def start_logging():
 
 if __name__ == "__main__":
     start_logging()
+    soul.ensure()  # put her character where it can be found and edited
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
     wake.warm()

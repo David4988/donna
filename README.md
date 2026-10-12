@@ -224,6 +224,31 @@ donna/
 
 ---
 
+## 🎭 Her Character Is a File
+
+`~/.cache/donna/SOUL.md`. Edit it and she changes on your **next sentence** — no restart.
+She writes it there herself on first run, with notes on how to edit it.
+
+The idea is lifted from [Nous Research's Hermes Agent](https://github.com/NousResearch/hermes-agent)
+(MIT), which keeps its whole persona in a `SOUL.md`. The useful part isn't the filename —
+it's that an assistant's character should be **data, not code**, so you can change who she
+sounds like without touching Python.
+
+**Keep it short.** Hermes does this in about **167 tokens** and reads better for it. The
+longest example measured — a Tony Stark tribute — spent **1,114 tokens** to sound worse, and
+told its model to invent stock prices to stay in character. She warns you past ~400 tokens.
+
+**What the file can't do** is change the rules: brevity, when to use a tool, and writing
+for the ear all live in `agent.py` and are always appended after your character. That split
+is deliberate and measured — the tool-discipline paragraph took tool routing from **30/40 to
+39/40** on `qwen3.5:4b`, and adding a worked example to it once took it *down* to **46/60**.
+If a persona could delete those rules, the first interesting one anybody wrote would quietly
+stop her opening files.
+
+So: describe **how she talks**, not what her tools are.
+
+---
+
 ## 💼 We're Hiring!
 
 No we're not. It's just me. But DMs are open for:

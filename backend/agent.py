@@ -11,10 +11,13 @@ That loop is the whole agent.
 import json
 
 import llm
+import soul
 import tools
 
-SYSTEM_PROMPT = (
-    "You are DONNA, a helpful desktop assistant running on the user's own computer. "
+# The rules, as opposed to her character. These stay in code because they are
+# measured and load-bearing, and because the first interesting persona anybody
+# writes would otherwise delete them by accident. soul.py owns the rest.
+RULES = (
     "Keep replies short: one to three sentences.\n"
     "Only use a tool when the user actually asks you to do something. Greetings, "
     "small talk, thanks and questions you can answer yourself get a plain reply and "
@@ -26,19 +29,29 @@ SYSTEM_PROMPT = (
     "don't quote file names -- just say what the thing is called. Say units as words, "
     "like 'fourteen degrees' rather than '14C'."
 )
-# Neither added paragraph is decoration, and both were measured.
+# Neither of the last two paragraphs is decoration, and both were measured.
 #
-# The second: on qwen3.5:4b the old one-line prompt scored 30/40 on "should
+# The tool one: on qwen3.5:4b the old one-line prompt scored 30/40 on "should
 # this be a tool call?" and this one scores 39/40, without losing a single real
 # tool call. Adding a worked example made it WORSE (46/60) -- naming a tool in
 # the prompt primes the model to reach for one. Don't add examples here.
 #
-# The third buys less than it looks like it should, because the model already
-# wrote fairly spoken prose: 11/12 of its tool-result summaries were clean
-# before it existed. It exists for the rest -- passive "Notepad has been
+# The speech one buys less than it looks like it should, because the model
+# already wrote fairly spoken prose: 11/12 of its tool-result summaries were
+# clean before it existed. It exists for the rest -- passive "Notepad has been
 # opened", "both located in different OneDrive folders" -- and because telling
 # it to say "degrees" costs nothing on top of speech_text.say_numbers(), which
 # is what actually guarantees it. See PLAN.md 6a.
+
+
+def system_prompt():
+    """Her character, then the rules, in that order.
+
+    Read fresh every turn so that editing SOUL.md takes effect on the next
+    thing you say rather than at the next restart. It is a file under 2 KB;
+    the read costs nothing next to a round trip to the model.
+    """
+    return soul.character() + "\n" + RULES
 
 MAX_TOOL_ROUNDS = 5  # so a confused model can't loop forever
 
@@ -55,7 +68,7 @@ def handle(text, history, send):
     for _ in range(MAX_TOOL_ROUNDS):
         try:
             reply = llm.ask(
-                [{"role": "system", "content": SYSTEM_PROMPT}, *history],
+                [{"role": "system", "content": system_prompt()}, *history],
                 tools.TOOLS,
                 on_delta=on_delta,
             )
