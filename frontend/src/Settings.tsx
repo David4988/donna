@@ -6,6 +6,15 @@ export type Sound = { voice: string; speed: number };
 
 const REGIONS: Record<string, string> = { en_US: "American", en_GB: "British" };
 
+// Kokoro names its voices by language and gender: "af_heart" is an American
+// female called Heart, "bm_george" a British male called George.
+const KOKORO_WHO: Record<string, string> = {
+  af: "American female",
+  am: "American male",
+  bf: "British female",
+  bm: "British male",
+};
+
 /**
  * A Piper voice id as something worth reading in a menu.
  *
@@ -18,13 +27,23 @@ const REGIONS: Record<string, string> = { en_US: "American", en_GB: "British" };
  * which is about half a second more before she starts talking.
  */
 export function voiceLabel(id: string): string {
+  if (id.startsWith("kokoro:")) {
+    // "kokoro:af_heart" -> "Heart — American female, Kokoro"
+    const [group, ...rest] = id.slice("kokoro:".length).split("_");
+    const person = rest.join("_") || group;
+    const who = KOKORO_WHO[group];
+    return `${capitalise(person)} — ${[who, "Kokoro"].filter(Boolean).join(", ")}`;
+  }
   const [region, name, quality] = id.split("-");
   if (!name) return id; // not a voice id we recognise; show it as it is
-  const person = name.split("_")[0];
-  const spoken = person.charAt(0).toUpperCase() + person.slice(1);
   const where = REGIONS[region];
   const detail = [where, quality === "high" ? "richer" : null].filter(Boolean).join(", ");
+  const spoken = capitalise(name.split("_")[0]);
   return detail ? `${spoken} — ${detail}` : spoken;
+}
+
+function capitalise(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
 }
 
 export default function Settings({

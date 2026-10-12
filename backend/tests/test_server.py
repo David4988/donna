@@ -169,6 +169,20 @@ def test_she_says_what_she_is_set_to_when_you_connect(url):
     assert isinstance(first["voices"], list)
 
 
+def test_the_window_is_told_what_rate_her_audio_is(url):
+    """It has to arrive BEFORE the first audio frame does.
+
+    Piper's medium voices are 22050 Hz, Kokoro is 24000 and Piper's low
+    voices are 16000. Playing one as another is a pitch error of up to 9%,
+    which sounds like a worse voice rather than like a bug, so there is
+    nothing to notice and nothing in the log.
+    """
+    with connect(url) as ws:
+        first = start(ws)
+    assert isinstance(first["rate"], int)
+    assert 8000 <= first["rate"] <= 96000  # what createBuffer will accept
+
+
 def test_a_settings_change_is_not_a_turn(url):
     """Moving a control says nothing, remembers nothing, and ends no turn."""
     with connect(url) as ws:

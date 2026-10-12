@@ -345,14 +345,14 @@ this evaluation and is deliberately **not** in `requirements-voice.txt`.
 | 8 | React UI in the browser | use DONNA from a web page | ✅ done |
 | 9 | Tauri window | use DONNA as a desktop app | ✅ done |
 | 9.5 | Streaming replies | watch the answer being typed instead of waiting for it | ✅ done |
-| 10A | Voice: she hears you and talks back | hold a conversation out loud, hands free | being designed |
+| 10A | Voice: she hears you and talks back | hold a conversation out loud, hands free | ✅ done |
 | 10B | Voice: she can be interrupted | cut her off mid-sentence, like Claude voice | after 10A |
 | 10C | "Hey Donna" wake word | summon her by her own name instead of "Hey Jarvis" | side project |
 | 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking | later |
 | 12 | Gestures | pinch and fist via webcam | later |
 | 13 | Spatial / projector | projected desk UI | later |
 
-**Steps 1–9 are DONNA v1, and they are built.** Step 10 is being designed now; 11–13 are not. Each gets its own short plan when we reach it, based on what the previous step taught us.
+**Steps 1–9.5 are DONNA v1, and 10A is built too** -- she hears you, answers out loud, shows your words as you speak and lets you pick a voice. 10B onward and 11–13 are not. Each gets its own short plan when we reach it, based on what the previous step taught us.
 
 I merged your "Python backend" and "WebSocket connection" steps into Step 2, because a backend you can't talk to isn't something you can run.
 
@@ -390,7 +390,7 @@ I merged your "Python backend" and "WebSocket connection" steps into Step 2, bec
   | Entering the session | ~~A hotkey for now.~~ **"Hey Jarvis"**, using openWakeWord's pretrained model -- no training needed, and it means Whisper never runs while she is asleep. "Hey Donna" needs a custom model and stays step 10C. She is still *called* DONNA; only the summons changed. |
   | Audio ownership | **Captured and played in the Tauri window**, streamed to Python over the existing WebSocket. The webview gives us echo cancellation and device handling for free; Python still decides everything. |
   | Speech-to-text | **faster-whisper on the CPU**, as the README planned. The 5800X carries it so the GPU stays free for the model. |
-  | Text-to-speech | **Piper** first (fast), Kokoro later (nicer), as the README planned. |
+  | Text-to-speech | **Both.** Piper first (fast) and ~~Kokoro later~~ **Kokoro now**, selectable per voice. See 6a.2 -- it cost +0.55s to the first word, which the budget absorbs, and the sample rate travels with the audio instead of being a constant. |
   | Budget | **≤5s from you stopping to her FIRST spoken word** — not to the end of her answer. Measured to first audio, the way streaming is measured to first token. |
   | Shape | Split in two: **10A** she hears and speaks (half-duplex, strictly sequential), **10B** she can be interrupted. 10A is built so 10B slots in rather than forcing a rewrite. |
   | Concurrency | **None added in 10A.** The browser runs voice-activity detection and sends one finished utterance, so Python stays synchronous (decision 1). Barge-in in 10B is what needs concurrency. |
@@ -435,7 +435,7 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 
 | Not now | When it comes back |
 |---|---|
-| Voice: mic, speech-to-text, text-to-speech | **Step 10A — being designed now.** |
+| Voice: mic, speech-to-text, text-to-speech | ~~Step 10A — being designed now.~~ **Built.** |
 | Wake word ("Hey Donna") | Step 10C. ~~No pretrained model exists for the phrase~~ -- true of "Hey Donna", so 10A ships with openWakeWord's pretrained **"Hey Jarvis"** instead. Training her own name is now a nicety, not a blocker. |
 | 3D avatar / shaders | Step 11 |
 | Gestures, cameras, MediaPipe | Step 12 |

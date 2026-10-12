@@ -127,7 +127,7 @@ Engineered with the rigor of a Fortune 500 company and the budget of a college c
 | 🤖 Model | **TBD** (qwen3.5:4b vs 9b vs a 27B vs qwen3.6 MoE) | Being decided by benchmarks, not feelings. A first for me. |
 | 👂 VAD | **Silero VAD** | Knows when you've stopped talking. Unlike my group project members. |
 | 📝 Speech-to-Text | **faster-whisper** (CPU) | Hears everything. Judges nothing. |
-| 🗣️ Text-to-Speech | **Piper** → **Kokoro** | Piper for speed, Kokoro for that executive-assistant elegance |
+| 🗣️ Text-to-Speech | **Piper** *and* **Kokoro** | Both, 34 voices, switchable in the window. Piper for speed (0.07s a sentence), Kokoro for the elegance (0.62s). Measured in PLAN.md 6a.2 |
 | 🔔 Wake Word | Push-to-talk → **openWakeWord** | Summoning rituals come later |
 | 🔍 File Search | **Everything** (`es.exe`) | Searches my entire disk faster than I can regret its contents |
 | 🌐 Web Search | **SearXNG** or **DuckDuckGo** | Self-hosted search. Big Tech is shaking. |

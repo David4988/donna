@@ -11,3 +11,4 @@
 faster-whisper>=1.1,<2   # speech to text, on the CPU
 piper-tts>=1.3,<2        # text to speech, in-process (native Windows wheel)
 openwakeword>=0.6,<0.7   # the 'Hey Jarvis' wake word (onnxruntime arrives with piper)
+kokoro-onnx>=0.6,<1       # the nicer voice; needs the model files, see tts.py

@@ -4,7 +4,12 @@
 // tts.SAMPLE_RATE. If they drift she sounds like a chipmunk, or Whisper hears
 // one, and nothing else tells you why.
 export const MIC_RATE = 16000; // what we send: PCM16 mono, what Whisper wants
-export const VOICE_RATE = 22050; // what she sends back: PCM16 mono, Piper's rate
+
+// What she sends back, until the backend says otherwise. It is no longer a
+// fact: Piper's medium voices are 22050, Kokoro is 24000 and Piper's low
+// voices are 16000, so the real rate arrives with the `settings` message and
+// goes to Speaker.speaksAt(). This is only the guess used before it does.
+export const VOICE_RATE = 22050;
 
 // One utterance is one WebSocket frame, and the backend drops anything longer.
 // Keep this below voice.MAX_UTTERANCE_BYTES.
@@ -71,10 +76,26 @@ export function toPcm16(samples: Float32Array): ArrayBuffer {
 export class Speaker {
   private context: AudioContext | null = null;
   private endsAt = 0;
+  private rate = VOICE_RATE;
+
+  /**
+   * What rate her audio is in, as the backend reports it.
+   *
+   * Changes when you pick a different voice, so it has to be told rather
+   * than assumed: playing 24000 Hz audio as 22050 makes her 9% too slow and
+   * too low, which sounds like a worse voice rather than like a bug.
+   */
+  speaksAt(rate: number): void {
+    if (rate >= 8000 && rate <= 96000) this.rate = rate;
+  }
 
   /** Must be called from a click: an AudioContext starts suspended. */
   async start(): Promise<void> {
-    this.context ??= new AudioContext({ sampleRate: VOICE_RATE });
+    // Deliberately not asking for a sample rate. Each buffer declares its
+    // own and the browser resamples to the hardware better than we can, and
+    // a forced rate was both a request the browser may ignore and a claim
+    // that stopped being true once voices disagreed about it.
+    this.context ??= new AudioContext();
     if (this.context.state === "suspended") await this.context.resume();
   }
 
@@ -87,7 +108,8 @@ export class Speaker {
     if (!context) return; // nobody pressed Start voice; nothing to play through
 
     const samples = new Int16Array(pcm);
-    const buffer = context.createBuffer(1, samples.length, VOICE_RATE);
+    if (samples.length === 0) return; // createBuffer throws on a zero length
+    const buffer = context.createBuffer(1, samples.length, this.rate);
     const channel = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
 

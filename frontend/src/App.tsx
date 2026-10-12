@@ -20,7 +20,7 @@ const BACKEND_URL = "ws://127.0.0.1:8765";
 type ServerMessage =
   | { type: "transcript"; text: string }
   | { type: "partial_transcript"; text: string }
-  | { type: "settings"; settings: Sound; voices: string[] }
+  | { type: "settings"; settings: Sound; voices: string[]; rate: number }
   | { type: "state"; name: string }
   | { type: "tool_call"; name: string; args: Record<string, unknown> }
   | { type: "tool_result"; name: string; result: string }
@@ -93,6 +93,10 @@ export default function App() {
           setSound(message.settings);
           setVoices(message.voices);
           setChangingVoice(false);
+          // Before any audio arrives, and again whenever the voice changes:
+          // Kokoro is 24000 Hz where Piper is 22050, and playing one as the
+          // other is a 9% pitch error that sounds like a bad voice.
+          speaker.current.speaksAt(message.rate);
           return; // the panel, not the transcript
         }
         if (message.type === "state") {

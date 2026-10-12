@@ -361,6 +361,22 @@ def test_a_synthesis_failure_does_not_lose_the_reply(monkeypatch):
     assert sent[-1] == {"type": "state", "name": "awake"}
 
 
+def test_how_long_she_thinks_she_is_talking_uses_the_voice_s_own_rate(monkeypatch):
+    """A constant 22050 here would be wrong by 9% on a Kokoro voice.
+
+    She waits for playback to finish before listening again, so believing
+    she is still talking for 9% longer than she is would swallow the start
+    of the next thing you say.
+    """
+    sent, _, slept, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, open notepad"], reply=HELLO)
+    # Exactly one second of audio AT KOKORO'S RATE, and a voice that says so.
+    monkeypatch.setattr(tts, "synthesise", lambda text: b"\0\0" * tts.KOKORO_RATE)
+    monkeypatch.setattr(tts, "sample_rate", lambda: tts.KOKORO_RATE)
+    session(sent).on_audio(b"x" * 20000)
+    # One second of speech plus the tail, not 24000/22050 = 1.09 seconds of it.
+    assert slept == pytest.approx([1.0 + voice.TAIL_SECONDS], abs=0.01)
+
+
 def test_she_only_says_she_is_mute_once(monkeypatch):
     sent, _, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis, open notepad", "open notepad"], reply=HELLO)
     monkeypatch.setattr(tts, "synthesise", lambda text: (_ for _ in ()).throw(tts.TtsError("no")))

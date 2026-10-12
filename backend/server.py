@@ -56,6 +56,7 @@ import os
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
+import settings
 import soul
 import stt
 import tts
@@ -185,9 +186,37 @@ def start_logging():
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def start_as_she_was_left():
+    """Load the voice you chose, not the default one.
+
+    Nothing used to tell tts about settings.json until you touched a control,
+    so she started up in DEFAULT_VOICE while the window showed the voice you
+    had picked -- and answered in the wrong one until you changed something.
+
+    That was invisible while every voice was 22050 Hz, because being the
+    wrong person is less obvious than being the wrong pitch. With Kokoro at
+    24000 in the list, the rate sent on connect belonged to one voice and the
+    name beside it to another.
+
+    settings.current() has already dropped anything not installed, so this
+    normally cannot fail; a corrupt model file still must not stop her
+    starting, and she should say which voice she ended up with.
+    """
+    chosen = settings.current()
+    try:
+        tts.configure(voice=chosen["voice"], speed=chosen["speed"])
+    except tts.TtsError as error:
+        logging.warning("%s Starting in %s instead.", error, tts.DEFAULT_VOICE)
+        try:
+            tts.configure(voice=tts.DEFAULT_VOICE)
+        except tts.TtsError as also:
+            logging.error("%s", also)  # warm() will report it properly
+
+
 if __name__ == "__main__":
     start_logging()
     soul.ensure()  # put her character where it can be found and edited
+    start_as_she_was_left()
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
     wake.warm()

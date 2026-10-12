@@ -138,13 +138,26 @@ class Session:
         self.send_settings()
 
     def send_settings(self):
-        """Tell the window what she is set to, and what else she could sound like."""
+        """Tell the window what she is set to, and what else she could sound like.
+
+        The rate rides along here rather than on a new message, because the
+        window needs it before the first audio frame arrives and this already
+        gets sent on connect and after every change. Without it, a 24000 Hz
+        Kokoro voice played as 22050 is a slow, flat chipmunk.
+        """
         try:
             voices = tts.installed_voices()
         except Exception as error:  # a missing voice folder must not kill the connection
             logging.error("%s", error)
             voices = []
-        self._send({"type": "settings", "settings": settings.current(), "voices": voices})
+        self._send(
+            {
+                "type": "settings",
+                "settings": settings.current(),
+                "voices": voices,
+                "rate": tts.sample_rate(),
+            }
+        )
 
     def on_partial(self, pcm):
         """Half of a sentence, while you are still saying it.
@@ -220,7 +233,13 @@ class Session:
         self._send(audio)
         # Playback is a schedule, not a total: sentence four starts when
         # sentence three finishes, which may be after it was sent.
-        self._playback_ends = max(_now(), self._playback_ends) + len(audio) / 2 / tts.SAMPLE_RATE
+        #
+        # The rate comes from the voice, not a constant: Kokoro speaks at
+        # 24000 and a constant 22050 here would have her thinking she is
+        # still talking for 9% longer than she is -- enough to swallow the
+        # start of your next sentence.
+        seconds = len(audio) / 2 / tts.sample_rate()
+        self._playback_ends = max(_now(), self._playback_ends) + seconds
 
     # ------------------------------------------------------------ plumbing
 
