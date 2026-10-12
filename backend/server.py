@@ -51,6 +51,7 @@ what it asked for, so a value she refused visibly snaps back.
 
 import json
 import logging
+import os
 
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
@@ -148,8 +149,29 @@ def make_server(port=PORT):
     )
 
 
+def start_logging():
+    """INFO by default; DONNA_LOG=debug to see every utterance's wake score.
+
+    DEBUG is what you run for a wake-word measurement -- every utterance the
+    gate thought was speech gets a line with its score, which is the whole
+    dataset. The timestamp is there for the same reason: false positives are
+    quoted per hour, so they have to be countable.
+
+    The chatty libraries are pinned at WARNING because at DEBUG they bury
+    DONNA's own lines in HTTP traffic, and none of it is about her.
+    """
+    level = os.environ.get("DONNA_LOG", "info").upper()
+    if level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+        level = "INFO"
+    logging.basicConfig(
+        level=level, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"
+    )
+    for noisy in ("httpx", "httpcore", "websockets", "faster_whisper", "urllib3", "numba"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    start_logging()
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
     wake.warm()
