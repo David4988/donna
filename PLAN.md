@@ -346,9 +346,9 @@ this evaluation and is deliberately **not** in `requirements-voice.txt`.
 | 9 | Tauri window | use DONNA as a desktop app | ✅ done |
 | 9.5 | Streaming replies | watch the answer being typed instead of waiting for it | ✅ done |
 | 10A | Voice: she hears you and talks back | hold a conversation out loud, hands free | ✅ done |
-| 10B | Voice: she can be interrupted | cut her off mid-sentence, like Claude voice | after 10A |
-| 10C | "Hey Donna" wake word | summon her by her own name instead of "Hey Jarvis" | side project |
-| 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking | later |
+| 10B | Voice: she can be interrupted | cut her off mid-sentence, like Claude voice | **next**, see 9a.4 |
+| ~~10C~~ | ~~"Hey Donna" wake word~~ | ~~summon her by her own name~~ | **dropped from this plan** -- a separate project |
+| 11 | 3D avatar | the golden sphere reacts to listening, thinking and speaking | after 10B; **the user is drafting the design** |
 | 12 | Gestures | pinch and fist via webcam | later |
 | 13 | Spatial / projector | projected desk UI | later |
 
@@ -387,7 +387,7 @@ I merged your "Python backend" and "WebSocket connection" steps into Step 2, bec
   | Decision | Choice |
   |---|---|
   | Interaction | **Open mic session.** Enter it once, then talk freely; she sleeps again after a stretch of silence. Not hold-to-talk. |
-  | Entering the session | ~~A hotkey for now.~~ **"Hey Jarvis"**, using openWakeWord's pretrained model -- no training needed, and it means Whisper never runs while she is asleep. "Hey Donna" needs a custom model and stays step 10C. She is still *called* DONNA; only the summons changed. |
+  | Entering the session | ~~A hotkey for now.~~ **"Hey Jarvis"**, using openWakeWord's pretrained model -- no training needed, and it means Whisper never runs while she is asleep. "Hey Donna" needs a custom model and is now a separate project rather than a step. She is still *called* DONNA; only the summons changed. |
   | Audio ownership | **Captured and played in the Tauri window**, streamed to Python over the existing WebSocket. The webview gives us echo cancellation and device handling for free; Python still decides everything. |
   | Speech-to-text | **faster-whisper on the CPU**, as the README planned. The 5800X carries it so the GPU stays free for the model. |
   | Text-to-speech | **Both.** Piper first (fast) and ~~Kokoro later~~ **Kokoro now**, selectable per voice. See 6a.2 -- it cost +0.55s to the first word, which the budget absorbs, and the sample rate travels with the audio instead of being a constant. |
@@ -436,7 +436,7 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 | Not now | When it comes back |
 |---|---|
 | Voice: mic, speech-to-text, text-to-speech | ~~Step 10A — being designed now.~~ **Built.** |
-| Wake word ("Hey Donna") | Step 10C. ~~No pretrained model exists for the phrase~~ -- true of "Hey Donna", so 10A ships with openWakeWord's pretrained **"Hey Jarvis"** instead. Training her own name is now a nicety, not a blocker. |
+| Wake word ("Hey Donna") | ~~Step 10C.~~ **A separate project.** 10A ships openWakeWord's pretrained **"Hey Jarvis"**, measured at 0.950 on a bare summons, so her own name is a nicety and not a blocker. |
 | 3D avatar / shaders | Step 11 |
 | Gestures, cameras, MediaPipe | Step 12 |
 | Projector, stereo cameras, spatial UI | Step 13 |
@@ -446,10 +446,111 @@ One small GitHub Actions workflow runs `pytest` on every push from Step 3. From 
 | Fast path (skip the LLM for "open X") | Only if we measure that "open X" is too slow. Adding it now would be premature optimization. |
 | Opening found files, result IDs | When we add "open that file" |
 | Everything (`es.exe`), Start Menu app index, fuzzy app names | When the folder walk or the fixed app list is too slow or too limiting |
-| Reading full web pages | When snippets aren't enough |
-| Memory across sessions, moving/deleting files, desktop automation | Later (README roadmap). Risky actions will require your confirmation. |
+| Reading full web pages | ~~When snippets aren't enough~~ **The trigger fired:** snippets are page descriptions, which is why "what's the weather" fails. See 9a.2. |
+| Memory across sessions, moving/deleting files, desktop automation | **Started:** 9a.3 adds who *you* are, by hand; what she learns herself comes after. More of this PC in 9a.2. Risky actions will still require your confirmation. |
 | Installer, auto-starting the backend from Tauri | When you use DONNA daily |
 | Auth tokens, protocol schemas and codegen, event bus, plugin system, dependency-injection framework, microservices | Only if a real problem forces one of them |
+
+## 9a. What's next, and in what order (planned 2026-10-13)
+
+10A is built and Kokoro is in. The complaint now is not that she is slow or flat — it is that
+**she doesn't know anything about the person she is talking to, and there is very little of
+this computer she can actually touch.** Three tools (`open_app`, `find_files`, `web_search`) is
+thin for something called a desktop assistant.
+
+Order below is deliberate: the things that change how she *feels* first, because they are small
+and we already know they work; the things that need a measurement last.
+
+### 9a.1 Subtitles, not a chat log
+
+**The bug:** the text races the voice. Deltas appear as the model generates; audio plays at
+speaking speed, and speaking is far slower than generating. From the measured rates (15.1 tok/s
+generating, one 14-word sentence taking 5.58s to say at 1.0x):
+
+| speed | one sentence: say vs write | after three sentences |
+|---|---|---|
+| 1.0x | 5.6s vs 1.2s — **4.7x ahead** | text leads by **13.2s** |
+| **1.3x** (what she is set to) | 4.3s vs 1.2s — **3.6x ahead** | text leads by **9.3s** |
+| 2.0x | 2.8s vs 1.2s — 2.3x ahead | text leads by 4.8s |
+
+**So a fixed 2-second delay does not fix this.** It corrects the first second and leaves seven
+more of drift, and the drift grows with the length of the reply. The lag is not an offset, it is
+a *rate* difference.
+
+**The fix is to treat the text as what it is — a subtitle.** Reveal each sentence when its own
+audio actually starts playing. The window already knows that moment exactly: `Speaker.play()`
+computes `startAt` from the AudioContext clock to schedule the sentence. So:
+
+- each audio frame is preceded by a small JSON message carrying the text of that frame
+- the window holds the text and reveals it at `startAt`, using the same clock that plays it
+- `assistant_delta` keeps streaming for the **typed** path, where there is no audio to sync to
+
+That is the honest version of what was asked for, it self-corrects instead of drifting, and it
+needs no new binary framing — only one more JSON message type.
+
+### 9a.2 More of this computer she can reach
+
+Each of these is small on its own. **The constraint is not the code, it is the prompt:** three
+tools is 239 tokens and routing measures 40/40, and tool-calling guides are unanimous that
+accuracy falls as the tool count rises. So they go in **small batches with the 40-case routing
+benchmark re-run after each one**, and if routing drops the batch gets grouped or trimmed rather
+than kept.
+
+| | why |
+|---|---|
+| `get_current_time` | two lines, and she cannot tell you the time today — she will invent it |
+| `open_file` / `open_folder` | the natural other half of `find_files`; §9 always had this waiting for "open that file" |
+| `read_file` | she can find a text file and still not tell you what is in it |
+| `fetch_page` | **the trigger in §9 has fired** — snippets are page *descriptions*, which is why she cannot answer "what's the weather" |
+| `get_world_news` | RSS. Measured 1.12s for four feeds sequentially, real content, no asyncio needed |
+| clipboard read/write | cheap, and immediately useful to someone working at a keyboard |
+
+`fetch_page` needs care. FRIDAY's version returns `response.text[:4000]` — raw HTML, so about a
+thousand tokens of `<div>` soup, six seconds of her reading markup. It needs real text
+extraction, **hand-rolled on `html.parser`**: a dependency is not available here, because
+`requirements.txt` must not change (CI's pip cache is keyed on its hash) and this is not a voice
+dependency either. Output capped like `web_search`'s snippets are.
+
+The existing rules still hold: no shell, no command tool, the LLM's text never reaches a shell,
+and anything destructive asks first.
+
+### 9a.3 Who you are
+
+`SOUL.md` is who *she* is. Nothing anywhere says who *you* are, which is most of why the brain
+feels underused: it is answering every question as a stranger.
+
+`~/.cache/donna/ABOUT-ME.md`, mirroring `soul.py` exactly — written on first run with notes,
+re-read every turn, prepended to the prompt, warned about past a token budget. Your name, how
+you like to be answered, what you are working on, what this machine is.
+
+This is the half of "memory" you can write by hand, and it is worth doing first because it is an
+afternoon's work and needs no design. The *earned* half — her noticing and recording things
+herself — is a larger piece that should follow it, not precede it.
+
+### 9a.4 Step 10B: interruption
+
+Cut her off mid-sentence. The design is settled and the blocker is a measurement:
+
+- **The window does the interrupting.** It owns playback, so flushing the scheduled audio the
+  moment you start talking is instant and needs no round trip. She stops *immediately*.
+- **The backend then stops generating**, so the compute is not wasted. Either a non-blocking
+  socket check between sentences (keeps one thread) or a reader thread (two per connection — a
+  change to decision 1, but still not asyncio).
+- **Blocked on the TV test.** If her own voice through the speakers trips the gate she will
+  interrupt herself on every sentence. The last log was encouraging — not one
+  `ignored … while speaking` line in a whole session — but the user may simply have been quiet.
+
+### 9a.5 Step 11: the sphere
+
+**Design comes from the user**, who is drafting it. Nothing to plan here until it arrives; the
+state machine it would react to (`asleep`/`awake`/`speaking`) already exists and is already sent
+to the window.
+
+### Parked
+
+**Step 10C ("Hey Donna")** is no longer a step in this plan — it is a separate project for
+later. "Hey Jarvis" works, measured at 0.950 and 0.847 on a bare summons, and training a custom
+wake word buys a nicer name rather than a better assistant.
 
 ## 10. Starting point
 
