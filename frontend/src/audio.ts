@@ -14,6 +14,35 @@ export const VOICE_RATE = 22050; // what she sends back: PCM16 mono, Piper's rat
 export const MAX_UTTERANCE_SECONDS = 19;
 
 /**
+ * Resample to MIC_RATE, because the browser is allowed to ignore us.
+ *
+ * `new AudioContext({ sampleRate })` is a REQUEST. Hardware that won't do
+ * 16kHz hands back its own rate -- commonly 48000 -- and nothing throws. The
+ * gate still works, because it is given the real rate and only measures
+ * loudness and time. What breaks is everything downstream: the PCM would go
+ * out at 48kHz while Python reads it as 16kHz, so Whisper hears a slur at a
+ * third speed and openWakeWord, which accepts no other rate, never fires
+ * once. She would look dead with nothing in the log to say why.
+ *
+ * Linear interpolation is enough here. The input is a 16kHz-bandwidth voice
+ * signal being decimated, and the alternative -- a windowed-sinc filter --
+ * is a lot of arithmetic to improve audio that then gets handed to a speech
+ * recogniser trained on far worse.
+ */
+export function toRate(samples: Float32Array, from: number, to: number): Float32Array {
+  if (from === to || samples.length === 0) return samples;
+  const out = new Float32Array(Math.max(1, Math.round((samples.length * to) / from)));
+  const step = from / to;
+  for (let i = 0; i < out.length; i++) {
+    const at = i * step;
+    const below = Math.floor(at);
+    const above = Math.min(below + 1, samples.length - 1);
+    out[i] = samples[below] + (samples[above] - samples[below]) * (at - below);
+  }
+  return out;
+}
+
+/**
  * Float samples (-1..1) to little-endian PCM16, which is what the wire and
  * Whisper both expect.
  *
@@ -171,10 +200,24 @@ export class Mic {
     await context.audioWorklet.addModule(
       URL.createObjectURL(new Blob([TAP_WORKLET], { type: "application/javascript" })),
     );
+    if (context.sampleRate !== MIC_RATE) {
+      // Not fatal -- toRate() fixes the audio on the way out -- but it should
+      // be on the record, because it changes what the gate is measuring and
+      // it is the first thing to suspect if waking goes strange.
+      console.warn(
+        `Microphone is running at ${context.sampleRate}Hz, not the ${MIC_RATE}Hz asked for. ` +
+          `Resampling every utterance before sending it.`,
+      );
+    }
     const tap = new AudioWorkletNode(context, "tap");
     tap.port.onmessage = (event) => this.hear(event.data as Float32Array, context.sampleRate);
     context.createMediaStreamSource(this.stream).connect(tap);
     this.context = context;
+  }
+
+  /** What the microphone is really running at, whatever we asked for. */
+  get rate(): number {
+    return this.context?.sampleRate ?? MIC_RATE;
   }
 
   stop(): void {
@@ -241,7 +284,7 @@ export class Mic {
       spokenMs - this.partialAt > PARTIAL_EVERY_MS
     ) {
       this.partialAt = spokenMs;
-      this.onPartial(this.joined());
+      this.onPartial(this.joined(rate));
     }
 
     if (loud) {
@@ -255,9 +298,9 @@ export class Mic {
     if (this.samples > MAX_UTTERANCE_SECONDS * rate) this.finish(rate);
   }
 
-  /** Everything heard so far, as one run of samples. */
-  private joined(): Float32Array {
-    return join(this.collecting, this.samples);
+  /** Everything heard so far, at MIC_RATE whatever the microphone runs at. */
+  private joined(rate: number): Float32Array {
+    return toRate(join(this.collecting, this.samples), rate, MIC_RATE);
   }
 
   private finish(rate: number) {
@@ -266,7 +309,7 @@ export class Mic {
     this.quietSince = 0;
     if (samples < 0.3 * rate) return; // a cough, a click, a door
 
-    this.onUtterance(join(collecting, samples));
+    this.onUtterance(toRate(join(collecting, samples), rate, MIC_RATE));
   }
 }
 

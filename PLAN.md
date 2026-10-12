@@ -139,10 +139,15 @@ Ryzen 7 5800X + RX 580 8 GB:
 | | `qwen3.5:4b` | `qwen3.5:9b` |
 |---|---|---|
 | Tool routing (same 15 prompts) | **15/15** | 14/15 |
-| Generation | **17.0 tok/s** | 14.4 tok/s |
+| Generation | ~~17.0 tok/s~~ **15.1 tok/s** | 14.4 tok/s |
 | Prompt processing | **169 tok/s** | 95 tok/s |
 | VRAM used | **3.15 GB** | 5.50 GB |
 | First word, cold, tools attached | **3.07s** | 5.43s |
+
+The 17.0 was ~11% optimistic and every latency estimate in this document
+inherited it. Re-measured 2026-10-12, best of three short generations with a tight
+spread (15.1, 14.4, 15.0). Long outputs are slower still: an 826-token reply ran at
+**12.9 tok/s**, so her "one to three sentences" rule is not only about not boring you.
 
 Three findings that change decisions:
 
@@ -158,8 +163,45 @@ Three findings that change decisions:
    Notepad for you now"* **without calling the tool** — it claimed to have done something it
    hadn't. 4b never did this. That, not speed, is why 4b is the choice.
 
-Generation speed is memory-bandwidth bound on a 2016 card; ~17 tok/s is the ceiling and no
-setting moves it. The lever is model size, which is why 4b is the one worth having.
+Generation speed is memory-bandwidth bound on a 2016 card; ~15 tok/s is the ceiling and no
+setting moves it. The lever is model size — but see §6a.3, which measures how little that
+lever actually gives.
+
+### 6a.3 Smaller did not work either (measured 2026-10-12)
+
+4b beat 9b going up. The obvious next question is whether something smaller beats 4b going
+down, so `qwen3.5:2b-q4_K_M` was pulled at **the same Q4_K_M quantisation** — the plain `2b`
+tag is 2.7–3.1 GB at a higher quant, and comparing against it would have measured
+quantisation rather than size.
+
+| | routing | generation | tool call | VRAM |
+|---|---|---|---|---|
+| `qwen3.5:4b` | **40/40** | 15.1 tok/s | 4.94s | 3.1 GB, 100% GPU |
+| `qwen3.5:2b-q4_K_M` | 28/40 | 17.3 tok/s | 3.20s | 1.6 GB, 100% GPU |
+
+**All twelve failures were missed tool calls**, never a wrong tool or a mangled argument:
+
+```
+no tool <- 'Find my tax files.'
+no tool <- "What's the weather in London right now?"
+no tool <- 'Look up who won the 2026 Super Bowl.'
+```
+
+It kept all 20 no-tool cases correct and lost 12 of the 20 real requests — the worst failure
+mode available, since she would simply chat instead of doing the thing. The reward was
+**+15% generation**, not the 1.5–1.7× predicted from the bytes ratio (3.3/1.9 = 1.74×): there
+is a fixed per-token cost that does not shrink with the model, so "just use a smaller model"
+has sharply diminishing returns on this card.
+
+So 4b is the sweet spot in both directions, and it is not close either way. This agrees with
+an independent 13-model tool-calling test (March 2026) that ranked Qwen3.5 4B **first at
+97.5%**, above GLM-4.7-Flash (18 GB, 95%) and Mistral Small 3.2 24B (15 GB, **42.5%**, 0/8 on
+multi-tool), and found no correlation between model size and tool-calling quality.
+
+Ruled out for this hardware, so nobody re-tries them: **9b** (measured worse), **anything
+12–30B dense** (will not fit 8 GB), and **`qwen3.5:35b-a3b`** — the MoE with ~3B active
+parameters that would generate at near-3B speed with 35B-class quality, and is 22 GB. That one
+is a GPU question, not a model question.
 
 ### 6a.1 How she sounds (measured 2026-10-11)
 
