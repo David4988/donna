@@ -100,6 +100,24 @@ const FRAMES_TO_START = 3; // this many loud frames in a row means you've starte
 const FLOOR = 0.012; // below this is never speech, however quiet the room
 const OVER_FLOOR = 2.5; // speech is this much louder than the room
 
+// How much of the room to keep from BEFORE you started talking.
+//
+// This is what makes a bare "Jarvis" wake her. openWakeWord classifies with a
+// receptive field of about two seconds, so a one-word utterance arriving with
+// nothing in front of it is being judged on almost no context. Measured on a
+// deliberately clipped "Jarvis": 0.09-0.27 whatever zero padding it was given
+// -- never reaching the 0.5 threshold -- but 0.597 when the padding was quiet
+// room noise instead of digital silence. Real audio is what the model was
+// trained on; zeros are out-of-distribution for it.
+//
+// "Hey Jarvis, open notepad" never needed this: it brings two seconds of its
+// own context and scores 0.999. Only the bare summons lives near the edge,
+// which is exactly the case that felt broken.
+//
+// It helps Whisper too: FRAMES_TO_START alone used to leave about 24ms of
+// lead-in, so the first phoneme could be clipped.
+const PREROLL_MS = 500;
+
 /**
  * Listens, and hands over each utterance when you stop talking.
  *
@@ -120,6 +138,11 @@ export class Mic {
   private quietSince = 0;
   private speaking = false;
   private noiseFloor = FLOOR;
+
+  // The room just before you spoke, oldest first. Kept while idle, handed
+  // over with the utterance, and never longer than PREROLL_MS.
+  private preroll: Float32Array[] = [];
+  private prerollSamples = 0;
 
   private partialAt = 0;
 
@@ -168,6 +191,8 @@ export class Mic {
     this.loudFrames = 0;
     this.speaking = false;
     this.partialAt = 0;
+    this.preroll = [];
+    this.prerollSamples = 0;
   }
 
   private hear(frame: Float32Array, rate: number) {
@@ -182,9 +207,27 @@ export class Mic {
     const loud = loudness > this.noiseFloor * OVER_FLOOR;
 
     if (!this.speaking) {
+      // Hold on to the room while it is quiet. Dropping these frames is what
+      // left the wake word with no context on a one-word summons.
+      this.preroll.push(frame);
+      this.prerollSamples += frame.length;
+      const keep = (PREROLL_MS / 1000) * rate;
+      while (this.prerollSamples > keep && this.preroll.length > 1) {
+        this.prerollSamples -= this.preroll.shift()!.length;
+      }
+
       this.loudFrames = loud ? this.loudFrames + 1 : 0;
       if (this.loudFrames < FRAMES_TO_START) return;
-      this.speaking = true; // keep the frames that started it, so no clipped word
+
+      // Start from the pre-roll, which already holds the frames that
+      // triggered this -- including the first two, which used to be thrown
+      // away despite the old comment claiming otherwise.
+      this.speaking = true;
+      this.collecting = this.preroll;
+      this.samples = this.prerollSamples;
+      this.preroll = [];
+      this.prerollSamples = 0;
+      return; // this frame is already in there, via the pre-roll
     }
 
     this.collecting.push(frame);

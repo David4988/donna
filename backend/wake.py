@@ -49,6 +49,13 @@ class WakeError(Exception):
     """The wake-word model is missing, or wouldn't load."""
 
 
+# Below this it was never her name; above it, somebody probably called her and
+# missed. The difference matters enough to log: "she ignored me" and "she
+# nearly heard me" have different fixes, and without the number there is no
+# way to tell them apart from the outside.
+NEARLY = 0.2
+
+
 def heard_wake_word(pcm):
     """Was that DONNA being called?"""
     mode = os.environ.get("DONNA_WAKE", "jarvis")
@@ -56,7 +63,22 @@ def heard_wake_word(pcm):
         return True
     if mode == "fake":
         return "jarvis" in pcm.decode("utf-8", "ignore").lower()
-    return score(pcm) >= THRESHOLD
+
+    heard = score(pcm)
+    if heard >= THRESHOLD:
+        logging.debug("woken: %.3f over %.2f", heard, THRESHOLD)
+        return True
+    if heard >= NEARLY:
+        logging.info(
+            "NEARLY woken: %.3f, and she needs %.2f. If that was you calling her, "
+            "run her with DONNA_WAKE_THRESHOLD=%.2f and try again.",
+            heard,
+            THRESHOLD,
+            max(0.1, round(heard - 0.05, 2)),
+        )
+    else:
+        logging.debug("not her name: %.3f", heard)
+    return False
 
 
 def score(pcm):

@@ -36,6 +36,16 @@ SILENCE_SECONDS = 30  # how long she stays awake with nothing said to her
 MAX_UTTERANCE_BYTES = 20 * stt.SAMPLE_RATE * 2  # 20s; the socket dies at 32.8s
 TAIL_SECONDS = 0.25  # let her last word finish before the mic counts again
 
+# What she says when you call her name and say nothing else.
+#
+# Decided here rather than by the model on purpose: it costs no tokens, needs
+# no round trip, and cannot wander off into opening an application. This is
+# the cheapest kind of personality there is -- change the words and she sounds
+# different, with nothing to re-benchmark.
+#
+# They rotate so that calling her name twice doesn't echo back identically.
+ACKNOWLEDGEMENTS = ("Yes?", "I'm listening.", "Go ahead.")
+
 # Module level so tests can replace them, the way the other fakes work.
 _now = time.monotonic
 _sleep = time.sleep
@@ -52,6 +62,7 @@ class Session:
         self._playback_ends = 0.0
         self._said = ""  # the last thing she said, for the echo check
         self._cant = set()  # capability notices already sent
+        self._acknowledged = 0  # which greeting is next, so they rotate
 
     # ------------------------------------------------------------ incoming
 
@@ -64,7 +75,8 @@ class Session:
         if self._state == AWAKE and _now() - self._last_heard > SILENCE_SECONDS:
             self._set_state(ASLEEP)
 
-        if self._state == ASLEEP:
+        was_asleep = self._state == ASLEEP
+        if was_asleep:
             # The whole point of the wake word: while she is asleep, Whisper
             # does not run at all. Everything said in the room is checked by a
             # small model that only knows one phrase, and is thrown away.
@@ -80,6 +92,16 @@ class Session:
             return self._cannot(DEAF, error)
 
         if speech_text.is_garbage(heard):
+            # Asleep, this is the one silent failure that looks like a dead
+            # assistant: her own model said she was called, and then there was
+            # nothing to act on. Worth a line you can see without DEBUG.
+            if was_asleep:
+                return logging.info(
+                    "woken, but Whisper found no words in %.2fs of audio (%r), so she "
+                    "stays asleep.",
+                    len(pcm) / 2 / stt.SAMPLE_RATE,
+                    heard,
+                )
             return logging.debug("ignored %r: no speech in it", heard)
         if speech_text.echoes(self._said, heard):
             return logging.debug("ignored %r: that was her own voice", heard)
@@ -94,7 +116,13 @@ class Session:
         if command:
             self._run(command)
         else:
-            self._answer("Yes?")  # her name, and nothing else
+            self._answer(self._acknowledge())  # her name, and nothing else
+
+    def _acknowledge(self):
+        """"Yes?" -- she was called, and given nothing to do yet."""
+        reply = ACKNOWLEDGEMENTS[self._acknowledged % len(ACKNOWLEDGEMENTS)]
+        self._acknowledged += 1
+        return reply
 
     def on_settings(self, changes):
         """A control moved. Not a turn: nothing is said and nothing is remembered."""

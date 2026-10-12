@@ -123,14 +123,82 @@ def test_hearing_her_name_wakes_her_and_runs_the_command(monkeypatch):
     assert spoken == ["Hello."]
 
 
+# ------------------------------------------------- telling the failures apart
+
+
+def test_a_near_miss_says_the_score_and_how_to_fix_it(monkeypatch, caplog):
+    """"She ignored me" and "she nearly heard me" have different fixes."""
+    monkeypatch.delenv("DONNA_WAKE", raising=False)
+    monkeypatch.setattr(wake, "score", lambda pcm: 0.42)
+    with caplog.at_level("INFO"):
+        assert wake.heard_wake_word(b"x" * 100) is False
+    assert "NEARLY woken" in caplog.text
+    assert "0.42" in caplog.text
+    assert "DONNA_WAKE_THRESHOLD" in caplog.text  # and what to do about it
+
+
+def test_something_that_was_never_her_name_stays_quiet(monkeypatch, caplog):
+    monkeypatch.delenv("DONNA_WAKE", raising=False)
+    monkeypatch.setattr(wake, "score", lambda pcm: 0.001)
+    with caplog.at_level("INFO"):
+        assert wake.heard_wake_word(b"x" * 100) is False
+    assert caplog.text == ""  # a quiet room must not fill the log
+
+
+def test_woken_but_transcribed_to_nothing_is_visible_without_debug(monkeypatch, caplog):
+    """The one silent failure that looks exactly like a dead assistant."""
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["[BLANK_AUDIO]"])
+    with caplog.at_level("INFO"):
+        session(sent).on_audio(b"x" * 20000)
+    assert spoken == []  # she stays asleep, deliberately
+    assert "woken, but Whisper found no words" in caplog.text
+
+
 def test_her_name_alone_gets_an_answer_without_troubling_the_model(monkeypatch):
     sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Hey Jarvis"])
     session(sent).on_audio(b"x" * 20000)
     assert _play.asked == []
     assert [m for m in sent if isinstance(m, dict) and m["type"] == "assistant_message"] == [
-        {"type": "assistant_message", "text": "Yes?"}
+        {"type": "assistant_message", "text": voice.ACKNOWLEDGEMENTS[0]}
     ]
-    assert spoken == ["Yes?"]
+    assert spoken == [voice.ACKNOWLEDGEMENTS[0]]
+
+
+@pytest.mark.parametrize("heard", ["Jarvis", "Jarvis.", "jarvis", "Hey Jarvis", "Hey Jarvis."])
+def test_the_bare_summons_wakes_her_however_it_is_spelled(monkeypatch, heard):
+    """Whichever way Whisper writes it, nothing is left over to run."""
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=[heard])
+    talker = session(sent)
+    talker.on_audio(b"x" * 20000)
+    assert _play.asked == []  # the model is never troubled
+    assert spoken == [voice.ACKNOWLEDGEMENTS[0]]
+    assert talker._state == voice.AWAKE  # ...and now you can just talk
+
+
+def test_being_summoned_again_later_does_not_echo_the_same_words(monkeypatch):
+    """Identical replies in a row are what make a thing feel like a machine.
+
+    The clock jumps past SILENCE_SECONDS between summons because that is the
+    only way to be summoned twice: while she is already awake, her name on
+    its own is small talk, not a summons.
+    """
+    sent, spoken, _, clock = fake_voice(monkeypatch, heard=["Jarvis", "Jarvis", "Jarvis"])
+    talker = session(sent)
+    for _ in range(3):
+        talker.on_audio(b"x" * 20000)
+        clock[0] += voice.SILENCE_SECONDS + 1  # she dozes off in between
+    assert spoken == list(voice.ACKNOWLEDGEMENTS[:3])
+    assert len(set(spoken)) == 3
+
+
+def test_after_the_bare_summons_the_next_thing_said_is_a_command(monkeypatch):
+    """The whole point: name, "Yes?", then talk to her without naming her again."""
+    sent, spoken, _, _ = fake_voice(monkeypatch, heard=["Jarvis", "open notepad"], reply=HELLO)
+    talker = session(sent)
+    talker.on_audio(b"x" * 20000)  # "Jarvis"
+    talker.on_audio(b"x" * 20000)  # "open notepad" -- no summons needed
+    assert _play.asked == ["open notepad"]
+    assert spoken == [voice.ACKNOWLEDGEMENTS[0], "Hello."]
 
 
 # ---------------------------------------------------------------- awake
