@@ -155,10 +155,22 @@ Three findings that change decisions:
    32 GB of system RAM". Wrong: Ollama's **Vulkan** backend offloads all 34 layers to the
    RX 580, 0 bytes in system RAM. Vulkan matters — ROCm dropped Polaris years ago, so without
    it this card would be unusable.
-2. **The tool definitions cost ~3s of prompt processing, but only on the first turn.** They are
-   506 prompt tokens. Within a continuing conversation the prefix is cached and turn 2 onward
-   costs ~0.39s, taking a full round trip from 3.44s to **0.85s**. Pre-warming the cache at
-   startup therefore hides the whole cold cost — which is what makes the voice budget work.
+2. **The fixed prefix costs seconds of prompt processing, but only on the first turn.** Within
+   a continuing conversation the prefix is cached and turn 2 onward costs ~0.39s, taking a full
+   round trip from 3.44s to **0.85s**. ~~Pre-warming the cache at startup therefore hides the
+   whole cold cost~~ — which this document asserted for three days without it being implemented.
+   It is now (`agent.warm()`), and it matters far more since the prefix grew from 496 to 2,744
+   tokens with ABOUT_ME.md in it. Measured against a freshly restarted Ollama:
+
+   | | first spoken word |
+   |---|---|
+   | no pre-warm | **25.45s** |
+   | `agent.warm()` at startup | **4.43s** |
+
+   The warm itself takes ~26s, so startup roughly doubles (~20s to ~46s) and 21 seconds move
+   out of your first sentence. For something left running that is the right trade; a 25-second
+   first reply is not an assistant. Note it runs before `serve()`, so nothing can connect until
+   it finishes — moving it after would need a thread, and the log says what it is doing.
 3. **The bigger model was the less reliable one.** On "Open notepad", 9b replied *"I'm opening
    Notepad for you now"* **without calling the tool** — it claimed to have done something it
    hadn't. 4b never did this. That, not speed, is why 4b is the choice.

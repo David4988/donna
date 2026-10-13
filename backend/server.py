@@ -56,6 +56,8 @@ import os
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.server import serve
 
+import about
+import agent
 import settings
 import soul
 import stt
@@ -216,12 +218,14 @@ def start_as_she_was_left():
 if __name__ == "__main__":
     start_logging()
     soul.ensure()  # put her character where it can be found and edited
+    about.ensure()  # ...and somewhere to say who you are
     start_as_she_was_left()
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
     wake.warm()
     stt.warm()
     tts.warm()
+    agent.warm()  # last: it needs the voice loaded to know nothing else is pending
     with make_server() as server:
         print(f"DONNA backend listening on ws://{HOST}:{PORT}  (Ctrl+C to stop)")
         try:

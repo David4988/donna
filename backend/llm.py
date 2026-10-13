@@ -89,6 +89,39 @@ def ollama_ask(messages, tools, *, on_delta=None):
     )
 
 
+def prime(messages, tools):
+    """Read the prefix now so the first thing you say doesn't pay for it.
+
+    Ollama caches a prompt prefix, and measured, the saving is the whole
+    difference between a usable assistant and a baffling one: the fixed
+    prefix is 2,744 prompt tokens at 169 tokens/second, so about 16 seconds
+    on the first turn of a conversation and ~0.4s on every turn after it.
+    PLAN.md 6a has claimed since the voice design that pre-warming hides that
+    cost. It never actually did it -- this is that claim, implemented.
+
+    Asks for a single token, because the point is to make the model READ the
+    prefix, not to hear what it says. Never raises: failing to warm up is
+    slow, not broken, and the real error arrives on the first real turn with
+    a message written for a human.
+    """
+    if os.environ.get("DONNA_LLM", "ollama") == "fake":
+        return
+    body = {
+        "model": active_model,
+        "messages": messages,
+        "stream": False,
+        "max_tokens": 1,
+    }
+    if tools:
+        body["tools"] = tools
+    if not thinking_enabled():
+        body["reasoning_effort"] = "none"
+    try:
+        httpx.post(URL, json=body, timeout=TIMEOUT_SECONDS)
+    except Exception as error:
+        logging.info("Couldn't warm the model up (%s). The first reply will be slow.", error)
+
+
 def ask_model(model, messages, tools, on_delta):
     body = {"model": model, "messages": messages, "stream": True}
     if tools:

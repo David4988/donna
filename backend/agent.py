@@ -9,7 +9,9 @@ That loop is the whole agent.
 """
 
 import json
+import logging
 
+import about
 import llm
 import soul
 import tools
@@ -45,15 +47,42 @@ RULES = (
 
 
 def system_prompt():
-    """Her character, then the rules, in that order.
+    """Who she is, then who you are, then the rules.
 
-    Read fresh every turn so that editing SOUL.md takes effect on the next
-    thing you say rather than at the next restart. It is a file under 2 KB;
-    the read costs nothing next to a round trip to the model.
+    All three are read fresh every turn, so editing SOUL.md, ABOUT_ME.md or
+    USER_STATE.md takes effect on the next thing you say rather than at the
+    next restart. They are small files; the reads cost nothing next to a
+    round trip to the model.
+
+    The rules go LAST on purpose. They are the part that has been measured --
+    30/40 to 39/40 on tool routing -- and a model attends most closely to the
+    end of its instructions, which is exactly where the fragile thing should
+    sit when there is a biography in front of it.
     """
-    return soul.character() + "\n" + RULES
+    parts = [soul.character(), about.context(), RULES]
+    return "\n".join(part for part in parts if part)
 
 MAX_TOOL_ROUNDS = 5  # so a confused model can't loop forever
+
+
+def warm():
+    """Make the model read the prefix now, while she is still starting up.
+
+    Lives here rather than in llm.py because the prefix is this module's
+    business -- the character, who you are, the rules and the tools -- and
+    llm.py importing agent.py would be a circle.
+
+    Worth doing at all because the prefix grew: 496 tokens before she knew
+    anything about you, 2,744 after, which is 16 seconds of reading on the
+    first turn instead of 3. Pay it during the 20 seconds she already spends
+    loading Whisper and a voice.
+    """
+    logging.info("Reading your details so the first reply doesn't have to...")
+    llm.prime(
+        [{"role": "system", "content": system_prompt()}, {"role": "user", "content": "Hello."}],
+        tools.TOOLS,
+    )
+    logging.info("DONNA is ready.")
 
 
 def handle(text, history, send):
