@@ -564,6 +564,115 @@ to the window.
 later. "Hey Jarvis" works, measured at 0.950 and 0.847 on a bare summons, and training a custom
 wake word buys a nicer name rather than a better assistant.
 
+## 9b. Tools: how far she can reach, and what stops her (researched 2026-10-13)
+
+The ambition is that DONNA "almost replaces the operating system" — not literally, but that
+the things done fifty times a day stop needing a mouse. §9a.2 listed six tools to add. This
+section is the research behind doing that at scale, and it changes the shape of the answer.
+
+### 9b.1 The constraint is tool COUNT, and it is brutal
+
+Measured by others, on far stronger models than this one. A 2026 paper on how many tools an
+agent should see found **Claude** selecting the correct tool:
+
+| tools visible | Claude's accuracy |
+|---|---|
+| ~2.2 | **93.1%** |
+| 5 | **87.1%** |
+
+Six points lost between two tools and five, on a frontier model. Practitioner reports put
+noticeable degradation at **10–20 tools in active rotation**, OpenAI's hard ceiling is 128, and
+the RAG-MCP work showed retrieval-based selection raising accuracy from 13.62% to 43.13% *while
+halving prompt tokens* — i.e. the fix for too many tools is never "add capacity", it is
+"show the model fewer".
+
+DONNA today: **3 tools, 239 tokens, 40/40 routing measured.** That is the good end of this
+curve and it is the thing to protect. Thirty flat tools on a 4B model would produce an
+assistant that is impressive in a list and useless in practice.
+
+**So: few DEFINITIONS, many CAPABILITIES.** `open_app` already shows the pattern — one
+definition, an `enum` of six apps. Choosing an enum value *inside* an already-chosen tool is a
+different and much easier problem than choosing between thirty tools.
+
+### 9b.2 The shape: one `computer` tool, many actions
+
+Target **six definitions** exposing roughly thirty-five capabilities:
+
+| definition | what it covers |
+|---|---|
+| `open_app(app)` | existing; grow the enum, don't add tools |
+| `find_files(query)` | existing |
+| `web_search(query)` | existing |
+| `read_page(url)` | §9a.2 — the trigger fired; snippets are page descriptions |
+| **`computer(action, value?)`** | **the lever.** `time`, `date`, `battery`, `disk`, `vram`, `cpu`, `volume_up/down/mute`, `media_play/pause/next/prev`, `lock`, `clipboard_read`, `clipboard_write`, `window_list`, `window_focus`, `recent_files` |
+| `notes(action, text?)` | `jot`, `list`, `search`, and `remember` — writing a fact into USER_STATE.md |
+
+`vram` is on that list for a specific reason: this machine lives permanently against an 8 GB
+ceiling, so "how much VRAM is free" is a real daily question rather than a demo.
+
+Each batch lands with the **40-case routing benchmark re-run**, and a batch that costs routing
+gets merged into `computer` or dropped. The benchmark is the gate, not taste.
+
+### 9b.3 Vision: it works, it is accurate, and it is far too slow
+
+`qwen3.5:4b` advertises a `vision` capability and has a 333M-parameter clip encoder, so this was
+worth measuring rather than assuming. A real screenshot of this desktop, captured through
+PowerShell with **no new dependency**:
+
+| image | question | time |
+|---|---|---|
+| 1024×576 | "what application is on screen and what is the user doing?" | **221.8s** |
+| 480×270 | "is there an error dialog on screen?" | **26.2s** |
+
+The 1024px answer was genuinely good — it identified an agent interface over a code editor,
+background tasks on the right, project files on the left, and that the open document was a
+DONNA research plan. The capability is real. The latency is not: it scales with pixel count and
+even a thumbnail is **5x the entire voice budget**.
+
+So vision is **not a conversational tool**. It is viable only as an explicitly slow, explicitly
+asked-for task — "have a look at my screen", a holding phrase, an answer half a minute later —
+which means it should wait for §9a.1's holding phrase and sit outside the always-on tool set.
+Revisit on hardware with a working ROCm/CUDA path; this is a GPU limit, not a design one.
+
+### 9b.4 What needs building before the interesting tools can exist
+
+**A confirmation round trip.** ABOUT_ME.md asks her to confirm before deleting files, sending
+messages, buying anything or changing settings — and the protocol has no way to ask. Every
+destructive tool is blocked on this. It is a new message pair (`confirm` down, a reply up) and
+the synchronous design makes it awkward: `agent.handle` is inside the connection thread and
+cannot read the socket while it waits. Same blocker as 10B, and worth solving once for both.
+
+**Window control** needs `pywinauto` (UIA backend, last release 0.6.9) or the `uiautomation`
+wrapper. Both are real but fragile — they identify controls by title and class, so they break
+when apps change — and both are new dependencies. `window_list`/`window_focus` can be done
+first through PowerShell for zero dependencies and much less power.
+
+**No shell tool, ever.** The existing rule stands: there is deliberately no "run a command"
+tool and text written by the LLM never reaches a shell. Grouping actions behind an `enum` keeps
+that true — the model picks a name from a list and Python decides what that name does.
+
+### 9b.5 Later, and specific to this user rather than generic
+
+Ordered by how often they would actually fire:
+
+- **`project(action, name)`** — DONNA, TrialGuard, ClipPods and others are live at once. "Open
+  TrialGuard" meaning editor plus folder plus a `git status` summary is a daily action.
+- **Schedule awareness** — college 07:00–16:00, focused work from 17:30, a hard stop at 23:00,
+  and a history of burnout. A tool that knows the shape of the day can say "it is 22:40" rather
+  than cheerfully starting something.
+- **Cross-device**, over the Tailscale mesh that already exists: is the ZBook awake, is a file
+  on the EliteBook.
+- **JLPT N4 drill** — a vocabulary tool is a tiny amount of code and gets used daily.
+
+### 9b.6 The honest ceiling
+
+Tools cannot replace an operating system, and the research above says the attempt would make
+her worse rather than broader. What they *can* do is make the twenty actions done fifty times a
+day voice-driven, which is what "almost replaces it" actually feels like from the chair.
+
+The failure mode to avoid is fifty tools that each work 60% of the time. Six that work 95% is a
+better assistant and a much better demo. Measure at every batch.
+
 ## 10. Starting point
 
 This plan starts from a clean repository: only README.md was kept. An earlier, more elaborate
