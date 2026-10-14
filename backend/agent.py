@@ -80,7 +80,7 @@ def warm():
     logging.info("Reading your details so the first reply doesn't have to...")
     llm.prime(
         [{"role": "system", "content": system_prompt()}, {"role": "user", "content": "Hello."}],
-        tools.TOOLS,
+        tools.offered(),
     )
     logging.info("DONNA is ready.")
 
@@ -98,7 +98,7 @@ def handle(text, history, send):
         try:
             reply = llm.ask(
                 [{"role": "system", "content": system_prompt()}, *history],
-                tools.TOOLS,
+                tools.offered(),
                 on_delta=on_delta,
             )
         except llm.LLMError as error:

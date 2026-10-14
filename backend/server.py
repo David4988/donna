@@ -58,6 +58,7 @@ from websockets.sync.server import serve
 
 import about
 import agent
+import macros
 import settings
 import soul
 import stt
@@ -220,6 +221,7 @@ if __name__ == "__main__":
     start_logging()
     soul.ensure()  # put her character where it can be found and edited
     about.ensure()  # ...and somewhere to say who you are
+    macros.ensure()  # ...and somewhere to write your own recipes
     start_as_she_was_left()
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
