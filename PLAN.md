@@ -655,14 +655,16 @@ that true — the model picks a name from a list and Python decides what that na
 
 Ordered by how often they would actually fire:
 
-- **`project(action, name)`** — DONNA, TrialGuard, ClipPods and others are live at once. "Open
-  TrialGuard" meaning editor plus folder plus a `git status` summary is a daily action.
-- **Schedule awareness** — college 07:00–16:00, focused work from 17:30, a hard stop at 23:00,
-  and a history of burnout. A tool that knows the shape of the day can say "it is 22:40" rather
-  than cheerfully starting something.
-- **Cross-device**, over the Tailscale mesh that already exists: is the ZBook awake, is a file
-  on the EliteBook.
-- **JLPT N4 drill** — a vocabulary tool is a tiny amount of code and gets used daily.
+- **`project(action, name)`** — several projects are live at once. "Open <project>" meaning
+  editor plus folder plus a `git status` summary is a daily action.
+- **Schedule awareness** — a tool that knows the shape of the day can say "it's late" rather
+  than cheerfully starting something new at the end of it.
+- **Cross-device**, between machines already networked together: is the laptop awake, is a
+  file on the other one.
+- **Language practice** — a vocabulary drill is a tiny amount of code and would get used daily.
+
+The specifics behind these live in `~/.cache/donna/`, with the rest of what she knows about
+you, and not in this repo, which is public.
 
 ### 9b.6 The honest ceiling
 
