@@ -61,6 +61,7 @@ import agent
 import settings
 import soul
 import stt
+import tools
 import tts
 import voice
 import wake
@@ -222,6 +223,7 @@ if __name__ == "__main__":
     start_as_she_was_left()
     # Load the wake word, the ears and the voice now: between them they take
     # about 17 seconds, and paying that on your first sentence would ruin it.
+    tools.warm()  # the Start Menu, so "open WhatsApp" doesn't wait 2s for it
     wake.warm()
     stt.warm()
     tts.warm()
