@@ -3,6 +3,7 @@ import logging
 import pytest
 
 import agent
+import once
 import soul
 
 
@@ -10,7 +11,7 @@ import soul
 def _her_own_file(monkeypatch, tmp_path):
     """Never the real ~/.cache/donna/SOUL.md: these tests write to it."""
     monkeypatch.setattr(soul, "PATH", tmp_path / "SOUL.md")
-    monkeypatch.setattr(soul, "_warned", set())
+    monkeypatch.setattr(once, "_warned", set())
     return soul.PATH
 
 

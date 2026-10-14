@@ -4,6 +4,7 @@ import pytest
 
 import about
 import agent
+import once
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +18,7 @@ def _her_own_files(monkeypatch, tmp_path):
         "HEADINGS",
         {about.ABOUT_PATH: "Who you are talking to.", about.STATE_PATH: "What they are doing."},
     )
-    monkeypatch.setattr(about, "_warned", set())
+    monkeypatch.setattr(once, "_warned", set())
     return about.ABOUT_PATH, about.STATE_PATH
 
 

@@ -25,6 +25,8 @@ import logging
 import os
 from pathlib import Path
 
+import once
+
 PATH = Path(os.environ.get("DONNA_SOUL", "~/.cache/donna/SOUL.md")).expanduser()
 
 # Her character if there is no file, which is also what ensure() writes.
@@ -45,16 +47,6 @@ DEFAULT = (
 # than refuses -- but the good examples are all far shorter than this.
 LONG_ENOUGH = 1600  # characters, so roughly 400 tokens
 
-_warned = set()
-
-
-def _warn_once(message):
-    """Say it the first time. Her character is read every turn, and the same
-    complaint on every sentence would train you to stop reading the log."""
-    if message not in _warned:
-        _warned.add(message)
-        logging.warning("%s", message)
-
 
 def character():
     """Who she is. Her own file if she has one, the default if not."""
@@ -63,7 +55,7 @@ def character():
     except FileNotFoundError:
         return DEFAULT
     except OSError as error:
-        _warn_once(f"Couldn't read {PATH}: {error}. Using her default character.")
+        once.warn(f"Couldn't read {PATH}: {error}. Using her default character.")
         return DEFAULT
 
     # Markdown comments and headings are for whoever is editing the file, not
@@ -74,7 +66,7 @@ def character():
         return DEFAULT
 
     if len(written) > LONG_ENOUGH:
-        _warn_once(
+        once.warn(
             f"{PATH.name} is {len(written)} characters, about {len(written) // 4} tokens. "
             f"That is roughly {len(written) / 4 / 169:.1f}s of extra thinking on the first "
             f"turn of a conversation, and a long character is also measurably worse at "

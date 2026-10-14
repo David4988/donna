@@ -32,6 +32,8 @@ import os
 import re
 from pathlib import Path
 
+import once
+
 HOME = Path(os.environ.get("DONNA_ABOUT_DIR", os.path.expanduser("~/.cache/donna")))
 ABOUT_PATH = HOME / "ABOUT_ME.md"
 STATE_PATH = HOME / "USER_STATE.md"
@@ -70,14 +72,6 @@ HEADINGS = {
 # breaking tool routing once. 1200 tokens of context is about 7 seconds cold.
 LOUD_ENOUGH = 4800  # characters, so roughly 1200 tokens
 
-_warned = set()
-
-
-def _warn_once(message):
-    if message not in _warned:
-        _warned.add(message)
-        logging.warning("%s", message)
-
 
 def read(path):
     """One document, stripped of its editor notes. "" if there isn't one."""
@@ -86,7 +80,7 @@ def read(path):
     except FileNotFoundError:
         return ""
     except OSError as error:
-        _warn_once(f"Couldn't read {path}: {error}. Carrying on without it.")
+        once.warn(f"Couldn't read {path}: {error}. Carrying on without it.")
         return ""
     written = COMMENT.sub("", written).strip()
     # Keep the headings when there IS something to frame -- they make a long
@@ -110,7 +104,7 @@ def context():
 
     together = "\n\n".join(parts)
     if len(together) > LOUD_ENOUGH:
-        _warn_once(
+        once.warn(
             f"What she knows about you is {len(together)} characters, about "
             f"{len(together) // 4} tokens. That is roughly "
             f"{len(together) / 4 / 169:.1f}s of extra thinking on the first turn of a "
