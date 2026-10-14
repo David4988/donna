@@ -56,7 +56,7 @@ You say "Hey Jarvis, what's the weather in London" and a voice answers out loud,
 | 🔊 **Voice Output** | She talks back in one of **34 voices**, switchable mid-conversation | ✅ Works |
 | 💬 **Conversation** | Say her name, she says "Yes?", then you just talk. No re-summoning for 30 seconds | ✅ Works |
 | 🌐 **Web Search** | Researches things instead of hallucinating confidently like *some* models | ✅ Works |
-| 🚀 **App Launching** | "Open VS Code." Done. No clicking. Clicking is for the weak. | ✅ Works (6 apps) |
+| 🚀 **App Launching** | "Open WhatsApp." Done. No clicking. Clicking is for the weak. | ✅ Works (your whole Start Menu) |
 | 📁 **File Finding** | Finds that PDF you swear you saved somewhere in 2024 | ✅ Works |
 | 🎭 **Editable Soul** | Her character is a Markdown file. Edit it, she changes on your next sentence | ✅ Works |
 | 🧍 **Knows Who You Are** | A second Markdown file so she stops answering every question as a stranger | ✅ Works |
@@ -149,7 +149,7 @@ Nine messages down, two up, plus audio as raw bytes. One rule: **binary means au
 | 🔔 Wake Word | **openWakeWord** — "Hey Jarvis" | Not "Hey Donna", because no pretrained model exists for it and training one buys a nicer name rather than a better assistant. She is still *called* DONNA |
 | 🔍 File Search | `os.walk` over Desktop/Documents/Downloads | `es.exe` when this gets too slow. It hasn't yet |
 | 🌐 Web Search | **`ddgs`**, Yahoo first then everything | Self-hosted search is next. Big Tech is shaking, slightly |
-| 🚀 App Index | Start Menu + `shell:AppsFolder`, fuzzy matched | 🚧 Not built. 212 apps are sitting there waiting. Currently a hand-written list of six |
+| 🚀 App Index | Start Menu + `shell:AppsFolder`, matched strictest-first | Read at startup in 1.7s. **Not** fuzzy, on purpose: a similarity score can't tell that "zen" means Zen and not Zenless Zone Zero. Two names fit? She asks |
 
 ---
 
@@ -184,7 +184,7 @@ Because "it feels faster" is not a unit.
 DONNA is powerful. DONNA is also **not** getting `rm -rf` privileges.
 
 - 🚫 **No shell access, ever.** Text written by the LLM never reaches a shell. It picks a *name* from a list; Python decides what that name does
-- ✅ `open_app` only launches apps from a table in the source
+- ✅ `open_app` only launches what's in your Start Menu. The model says a *name*; the AppID that runs comes from Windows' own list. Uninstallers and "reset" shortcuts are left out entirely
 - 👀 `find_files` is **read-only** and returns names, never contents
 - 📏 `web_search` caps each snippet at 300 characters, because one GitHub README once arrived as 8,111 characters of `<div>` soup
 - 🗑️ Move/delete come **later**, behind confirmation, and deletes go to the Recycle Bin. Trust is earned

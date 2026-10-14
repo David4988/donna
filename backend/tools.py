@@ -8,9 +8,13 @@ If it isn't in this file, the LLM can't do it. There is deliberately no
 - run_tool() is the only way the agent runs a tool.
 """
 
+import json
+import logging
 import os
+import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from ddgs import DDGS
@@ -20,44 +24,220 @@ IS_WINDOWS = sys.platform == "win32"
 
 # ---------------------------------------------------------------- open_app
 
-# The only apps DONNA may open: key -> (display name, what Windows' `start` runs).
-# The LLM picks a key; the target always comes from this table.
-APPS = {
-    "vscode": ("Visual Studio Code", "code"),
-    "chrome": ("Google Chrome", "chrome"),
-    "notepad": ("Notepad", "notepad"),
-    "terminal": ("Windows Terminal", "wt"),
-    "explorer": ("File Explorer", "explorer"),
-    "calculator": ("Calculator", "calc"),
+# The apps DONNA may open are the ones in your Start Menu -- the list Windows'
+# own search uses, 212 entries on the PC this was written on. The LLM supplies
+# a name; the AppID that gets launched always comes from Windows' list, so a
+# name that matches nothing opens nothing.
+#
+# None until first read. That is also what lets tests swap in a small
+# made-up catalogue, through installed_apps(), on a machine with no Start Menu.
+CATALOGUE = None  # {"Visual Studio Code": "Microsoft.VisualStudioCode", ...}
+_read_at = 0.0
+
+# On a miss she looks again, so an app installed while she is running still
+# opens -- but not more often than this, because reading the Start Menu takes
+# about 2 seconds and a misheard name shouldn't cost that every time.
+REREAD_AFTER_SECONDS = 60
+
+# Windows PowerShell prints in the console code page unless told otherwise,
+# which turns "HWiNFO® 64" into "HWiNFO? 64".
+LIST_APPS = (
+    "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+    "Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"
+)
+
+# Start Menu entries she never opens. Uninstallers and "VLC media player -
+# reset preferences and cache files" delete things, and permanent deletion is
+# out of scope. (Web links are left out too, in parse_start_apps: they are
+# not apps, and web_search is how she uses the web.)
+NOT_APPS = re.compile(r"\b(uninstall|reset)", re.IGNORECASE)
+
+# Words that say how to open something, never which thing. Dropped from both
+# sides before comparing, so "play Genshin Impact" and "open the calculator
+# app" come down to the name.
+FILLER = {
+    "open", "launch", "start", "run", "play", "load", "fire", "bring", "up",
+    "the", "my", "a", "app", "application", "program",
+    "please", "can", "could", "you", "me", "for",
 }
 
-# Other names people (or the LLM) use for the same apps.
+# Names people say that are not the installed name. The catalogue does not
+# make these obsolete: measured, "vs code" matches none of 212 real names,
+# because no rule can get from "vs" to "visual studio".
 ALIASES = {
-    "vs code": "vscode",
-    "visual studio code": "vscode",
-    "code": "vscode",
-    "google chrome": "chrome",
-    "browser": "chrome",
+    "vs code": "visual studio code",
+    "vscode": "visual studio code",
+    "code": "visual studio code",
+    "chrome": "google chrome",
+    "browser": "google chrome",
     "windows terminal": "terminal",
-    "file explorer": "explorer",
-    "files": "explorer",
+    "explorer": "file explorer",
+    "files": "file explorer",
     "calc": "calculator",
 }
 
+# Below this many letters only an exact name counts: "x" is the start of Xbox.
+SHORTEST_GUESS = 3
+
+# Start Menu entries that open a document about a program rather than the
+# program: "7-Zip Help" is 7-zip.chm, "HWiNFO Manual" a PDF. (.msc is not on
+# the list -- Services and the firewall console are tools, not reading.)
+DOCUMENT = re.compile(r"\.(chm|pdf|txt|html?|url|ini)$", re.IGNORECASE)
+
+MAX_CHOICES = 5  # names read back when a request fits several apps
+
 
 def open_app(app):
-    key = app.strip().lower()
-    key = ALIASES.get(key, key)
-    if key not in APPS:
-        return f"Error: I can't open '{app}'. Apps I know: {', '.join(APPS)}."
-
-    name, target = APPS[key]
     if not IS_WINDOWS:
-        return f"Error: opening apps only works on Windows for now (wanted to open {name})."
+        return f"Error: opening apps only works on Windows for now (wanted to open {app.strip()})."
 
-    # `start` finds apps the same way the Win+R box does.
-    subprocess.Popen(["cmd", "/c", "start", "", target])
+    found = find_app(app, catalogue())
+    if not found and time.monotonic() - _read_at > REREAD_AFTER_SECONDS:
+        found = find_app(app, catalogue(reread=True))  # installed since she looked?
+    if not found:
+        return f"Error: there's no app called '{app.strip()}' on this PC."
+    if len(found) > 1:
+        return which_one(found)
+
+    name = found[0]
+    # The same door the Start Menu uses, so Store apps, ordinary programs and
+    # shortcuts all open the same way. No shell: the AppID is one argument.
+    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{CATALOGUE[name]}"])
     return f"Opened {name}."
+
+
+def which_one(found):
+    """Several apps fit. Nothing is opened; the model asks which you meant."""
+    shown = found[:MAX_CHOICES]
+    listed = ", ".join(shown[:-1]) + " or " + shown[-1]
+    if len(found) > len(shown):
+        listed += f" (or {len(found) - len(shown)} more)"
+    return f"Which one did you mean: {listed}? I haven't opened anything yet."
+
+
+def find_app(spoken, apps):
+    """Every name in `apps` ({name: AppID}) that fits what was said.
+
+    One: open it. Several: ask.
+
+    Layered, not scored, and that is measured rather than taste. Against the
+    real Start Menu, "zen" has to mean Zen and not Zenless Zone Zero, and
+    "hoyoplay" has to mean HoYoPlay and not Uninstall HoYoPlay. A similarity
+    score cannot see either difference. Trying the strictest rule first and
+    loosening only when it finds nothing gets both right. (speech_text.py
+    learned the same lesson about the wake word.)
+    """
+    wanted = words(spoken)
+    wanted = words(ALIASES.get(" ".join(wanted), " ".join(wanted)))
+    named = {name: words(name) for name in apps}
+
+    exact = [name for name, have in named.items() if have == wanted]
+    if len(exact) > 1:  # "Notepad" and "Notepad++" are both the word "notepad"
+        exact = [name for name in exact if name.lower() == " ".join(wanted)] or exact
+    if exact:
+        return exact
+
+    joined = "".join(wanted)
+    if len(joined) < SHORTEST_GUESS:
+        return []
+    looser = (
+        lambda have: have[: len(wanted)] == wanted,  # the start of the name
+        lambda have: set(wanted) <= set(have),  # every word, in any order
+        # "davinci" for "DaVinci", "whatsapp" for "Whats App": the letters,
+        # starting where one of the name's words starts.
+        lambda have: any("".join(have[at:]).startswith(joined) for at in range(len(have))),
+    )
+    for fits in looser:
+        found = [name for name, have in named.items() if fits(have)]
+        if found:
+            return family(programs_first(found, apps), named)
+    return []
+
+
+def programs_first(found, apps):
+    """"7zip" fits 7-Zip File Manager and 7-Zip Help; you meant the program.
+
+    Only a tie-break: asking for "7-zip help" by name still finds the help.
+    """
+    programs = [name for name in found if not DOCUMENT.search(apps[name])]
+    return programs or found
+
+
+def family(found, named):
+    """Just "VLC media player" when the others are its own variants.
+
+    "vlc" fits VLC media player and VLC media player skinned, and "node" fits
+    Node.js and Node.js command prompt. One of them is the plain app.
+    """
+    for name in found:
+        root = named[name]
+        if all(named[other][: len(root)] == root for other in found):
+            return [name]
+    return found
+
+
+def words(text):
+    """The words that name something: lowercase, no punctuation, no filler."""
+    found = re.findall(r"[a-z0-9]+", text.lower())
+    return [word for word in found if word not in FILLER] or found
+
+
+def catalogue(reread=False):
+    """Start Menu name -> AppID. Read once, then kept."""
+    global CATALOGUE, _read_at
+    if CATALOGUE is None or reread:
+        CATALOGUE = installed_apps()
+        _read_at = time.monotonic()
+    return CATALOGUE
+
+
+def installed_apps():
+    """What Windows lists in the Start Menu, as {name: AppID}."""
+    try:
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", LIST_APPS],
+            capture_output=True,
+            timeout=30,
+            check=True,
+            # Run from the desktop app, a console window would flash up.
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        logging.warning("DONNA couldn't read the Start Menu, so she can't open apps: %s", error)
+        return {}
+    return parse_start_apps(done.stdout.decode("utf-8", "replace"))
+
+
+def parse_start_apps(text):
+    """Get-StartApps' JSON as {name: AppID}, keeping only what's worth opening."""
+    try:
+        entries = json.loads(text.lstrip("﻿") or "[]")
+    except ValueError as error:
+        logging.warning("DONNA couldn't understand the Start Menu list: %s", error)
+        return {}
+    if isinstance(entries, dict):  # ConvertTo-Json unwraps a list of one
+        entries = [entries]
+
+    apps = {}
+    for entry in entries:
+        name = str(entry.get("Name") or "").strip()
+        app_id = str(entry.get("AppID") or "").strip()
+        if not name or not app_id or "://" in app_id or NOT_APPS.search(name):
+            continue
+        # Two entries can share a name -- "ChatGPT" is both an app and a Brave
+        # web app on the PC this was written on. A spoken name can't tell them
+        # apart, so the first one wins.
+        apps.setdefault(name, app_id)
+    return apps
+
+
+def warm():
+    """Read the Start Menu now: about 2 seconds, measured, which belongs with
+    the rest of startup rather than in front of your first "open"."""
+    if not IS_WINDOWS:
+        return
+    logging.info("Reading the Start Menu...")
+    logging.info("DONNA can open %d apps.", len(catalogue(reread=True)))
 
 
 # ---------------------------------------------------------------- find_files
@@ -212,11 +392,14 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Open an application on the user's computer.",
+            # No list of apps here, deliberately: the Start Menu holds about
+            # 200, which as an enum is ~2,000 tokens -- more than the rest of
+            # the prompt put together. She names it; find_app() decides.
+            "description": "Open an app installed on the user's computer.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "app": {"type": "string", "enum": list(APPS), "description": "Which app."}
+                    "app": {"type": "string", "description": "The app's name, as the user said it."}
                 },
                 "required": ["app"],
             },
