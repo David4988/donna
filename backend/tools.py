@@ -19,6 +19,8 @@ from pathlib import Path
 
 from ddgs import DDGS
 
+import desktop
+
 IS_WINDOWS = sys.platform == "win32"
 
 
@@ -86,6 +88,18 @@ DOCUMENT = re.compile(r"\.(chm|pdf|txt|html?|url|ini)$", re.IGNORECASE)
 
 MAX_CHOICES = 5  # names read back when a request fits several apps
 
+# How long she watches for an app's window before saying she can't confirm it
+# opened. Measured on this PC, every app that has a window showed it within
+# 1.1s -- Settings 0.5, WhatsApp 0.6, Notepad 0.7, Calculator 0.9, Control
+# Panel 1.1 -- while Ollama lives in the tray and never shows one. 5s is four
+# times the slowest, and only a windowless app ever waits all of it.
+CONFIRM_SECONDS = 5.0
+FRONT_AFTER_SECONDS = 1.5  # a new window gets this long to win; see window_for
+CONFIRM_POLL_SECONDS = 0.1  # one look at the screen costs ~20ms
+
+# Not evidence that a window is a particular app's: they're in half the titles.
+VENDOR_WORDS = {"microsoft", "windows", "google", "beta", "preview", "classic", "new", "desktop"}
+
 
 def open_app(app):
     if not IS_WINDOWS:
@@ -100,10 +114,69 @@ def open_app(app):
         return which_one(found)
 
     name = found[0]
-    # The same door the Start Menu uses, so Store apps, ordinary programs and
-    # shortcuts all open the same way. No shell: the AppID is one argument.
-    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{CATALOGUE[name]}"])
-    return f"Opened {name}."
+    before = desktop.visible_windows()
+    try:
+        # The same door the Start Menu uses, so Store apps, ordinary programs
+        # and shortcuts all open the same way. No shell: the AppID is one
+        # argument.
+        subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{CATALOGUE[name]}"])
+    except OSError as error:
+        return f"Error: Windows couldn't start {name}: {error}"
+
+    # Asking Windows to open something is not the same as it opening, and
+    # whatever this returns is what she tells you. So look before saying so.
+    seen = window_for(name, before)
+    if seen == "new":
+        return f"Opened {name}."
+    if seen == "front":
+        return f"{name} was already open; it's in front now."
+    if seen == "open":
+        return f"{name} was already open."
+    return (
+        f"I asked Windows to open {name}, but no window appeared within "
+        f"{CONFIRM_SECONDS:g} seconds, so I can't confirm it opened. Some apps "
+        "start in the background without a window."
+    )
+
+
+def window_for(name, before):
+    """Did `name` actually show up? "new", "front", "open", or None if not.
+
+    "new": a window appeared that wasn't there before the launch.
+    "front": none did, but the window in front is this app's -- what an app
+    that was already open usually does when asked to open again.
+    "open": its window is on screen, just not in front. Measured: Ollama,
+    already open, stayed where it was, and checking only the front window had
+    her telling you she couldn't confirm an app you could see.
+
+    New windows win, and get a head start: a browser tab called "WhatsApp Web"
+    in front would otherwise answer for a WhatsApp that never opened.
+    """
+    started = time.monotonic()
+    while True:
+        if set(desktop.visible_windows()) - set(before):
+            return "new"
+        waited = time.monotonic() - started
+        if waited >= FRONT_AFTER_SECONDS:
+            if names_this_app(name, desktop.front()[1]):
+                return "front"
+            if any(names_this_app(name, title) for title in desktop.visible_windows().values()):
+                return "open"
+        if waited >= CONFIRM_SECONDS:
+            return None
+        time.sleep(CONFIRM_POLL_SECONDS)
+
+
+def names_this_app(name, title):
+    """Is this window title this app's? Every distinctive word of its name.
+
+    All of them, not any: "Visual Studio Code" must not be confirmed by a
+    window titled "Microsoft Visual Studio". Vendor words are left out because
+    "Microsoft" is in half the titles on the screen.
+    """
+    wanted = [word for word in words(name) if word not in VENDOR_WORDS]
+    have = set(words(title))
+    return bool(wanted) and all(word in have for word in wanted)
 
 
 def which_one(found):
