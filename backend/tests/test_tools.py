@@ -6,9 +6,12 @@ import types
 
 import pytest
 
+import desktop
 import tools
 
 REAL_INSTALLED_APPS = tools.installed_apps  # the fixture below replaces it
+REAL_VISIBLE_WINDOWS = desktop.visible_windows  # ...and these, with a made-up screen
+REAL_FRONT = desktop.front
 
 # A small Start Menu holding each collision the real one has (212 entries,
 # measured): a name that is the start of another app's name, an uninstaller
@@ -38,6 +41,7 @@ START_MENU = [
     {"Name": "Steam", "AppID": "{7C5A}\\Steam\\Steam.exe"},
     {"Name": "Steam Support Center", "AppID": "http://support.steampowered.com/"},
     {"Name": "HWiNFO® 64", "AppID": "{6D80}\\HWiNFO64\\HWiNFO64.EXE"},
+    {"Name": "Ollama", "AppID": "C:\\Programs\\Ollama\\ollama app.exe"},  # lives in the tray
 ]
 
 
@@ -59,12 +63,34 @@ def start_menu(monkeypatch):
     return menu
 
 
+@pytest.fixture(autouse=True)
+def screen(monkeypatch):
+    """A made-up screen, so no test ever looks at real windows or waits long.
+
+    `.windows` is {handle: title}; `.front` is the title of the one in front;
+    `.launch_shows_a_window` decides whether a launch makes a new one appear.
+    """
+    shown = types.SimpleNamespace(windows={1: "Claude"}, front="Claude", launch_shows_a_window=True)
+    monkeypatch.setattr(desktop, "visible_windows", lambda: dict(shown.windows))
+    monkeypatch.setattr(desktop, "front", lambda: (None, shown.front))
+    monkeypatch.setattr(tools, "CONFIRM_SECONDS", 0.3)
+    monkeypatch.setattr(tools, "FRONT_AFTER_SECONDS", 0.05)
+    monkeypatch.setattr(tools, "CONFIRM_POLL_SECONDS", 0.01)
+    return shown
+
+
 @pytest.fixture
-def launched(monkeypatch):
+def launched(monkeypatch, screen):
     """Pretend we're on Windows and record what would be launched."""
     calls = []
+
+    def popen(args, **kwargs):
+        calls.append((args, kwargs))
+        if screen.launch_shows_a_window:
+            screen.windows[len(screen.windows) + 1] = "a window that wasn't there"
+
     monkeypatch.setattr(tools, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(subprocess, "Popen", popen)
     return calls
 
 
@@ -98,6 +124,75 @@ def test_open_known_app(launched, name):
 def test_open_any_installed_app(launched, said, name):
     assert tools.open_app(said) == f"Opened {name}."
     assert len(launched) == 1
+
+
+# ---- did it actually open?
+
+
+def test_she_only_says_opened_when_a_window_appeared(launched):
+    assert tools.open_app("calculator") == "Opened Calculator."
+
+
+def test_no_window_means_she_cannot_confirm_it(launched, screen):
+    """Asking Windows is not the same as it opening. Ollama, for one, never shows a window."""
+    screen.launch_shows_a_window = False
+    result = tools.open_app("calculator")
+    assert "can't confirm it opened" in result
+    assert "Opened" not in result
+    assert len(launched) == 1  # she did try
+
+
+def test_an_app_already_open_is_found_in_front(launched, screen):
+    """Asked again, an open app comes to the front instead of making a new window."""
+    screen.launch_shows_a_window = False
+    screen.front = "WhatsApp Beta"
+    assert tools.open_app("whatsapp") == "WhatsApp Beta was already open; it's in front now."
+
+
+def test_an_app_already_open_but_behind_is_still_found(launched, screen):
+    """Measured: Ollama, already open, did not come to the front when asked."""
+    screen.launch_shows_a_window = False
+    screen.windows[2] = "Ollama"
+    assert tools.open_app("ollama") == "Ollama was already open."
+
+
+def test_a_new_window_beats_a_lookalike_in_front(launched, screen):
+    """A browser tab titled "WhatsApp Web" must not answer for the app itself."""
+    screen.front = "WhatsApp Beta Web - Brave"
+    assert tools.open_app("whatsapp") == "Opened WhatsApp Beta."
+
+
+def test_a_launch_windows_refuses_is_an_error(launched, monkeypatch):
+    def popen(args, **kwargs):
+        raise OSError("explorer.exe is missing")
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    assert tools.open_app("calculator") == (
+        "Error: Windows couldn't start Calculator: explorer.exe is missing"
+    )
+
+
+@pytest.mark.parametrize(
+    "name, title, belongs",
+    [
+        ("Visual Studio Code", "main.py - donna - Visual Studio Code", True),
+        ("Visual Studio Code", "Solution1 - Microsoft Visual Studio", False),  # all words, not any
+        ("Google Chrome", "DONNA - Google Chrome", True),
+        ("Microsoft Edge", "New tab - Profile 1 - Microsoft​ Edge", True),
+        ("WhatsApp Beta", "WhatsApp", True),  # "Beta" is no evidence either way
+        ("Calculator", "Untitled - Notepad", False),
+        ("Microsoft Store", "Microsoft Teams", False),  # the vendor is not the app
+    ],
+)
+def test_names_this_app(name, title, belongs):
+    assert tools.names_this_app(name, title) is belongs
+
+
+def test_the_screen_reader_reports_nothing_off_windows(monkeypatch):
+    """desktop.py must import and answer on the Linux machine that runs CI."""
+    monkeypatch.setattr(desktop, "IS_WINDOWS", False)
+    assert REAL_VISIBLE_WINDOWS() == {}
+    assert REAL_FRONT() == (None, "")
 
 
 def test_several_matches_ask_and_open_nothing(launched):
