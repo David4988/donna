@@ -1,0 +1,15 @@
+# The macros routing.py measures with, so every machine is measured against
+# the same two names rather than whatever is in ~/.cache/donna/macros.toml.
+
+["work setup"]
+steps = [
+  { do = "open_app", app = "Visual Studio Code" },
+  { do = "open_app", app = "Google Chrome" },
+  { do = "open_app", app = "Terminal" },
+]
+
+["study mode"]
+steps = [
+  { do = "open_app", app = "OneNote" },
+  { do = "find_files", query = "lecture notes" },
+]

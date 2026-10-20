@@ -12,7 +12,9 @@ Two scores, measured on the same questions:
 
 A second group, APPS, asks for apps that were never in the old hand-written
 list of six. It measures whether she still reaches for open_app when the
-schema no longer names any apps.
+schema no longer names any apps. A third, MACROS, runs with two known macros
+on offer (bench/macros.toml) -- as does everything else here, since a user
+with macros has one more tool for her to tell apart.
 
 It talks to the real model, so Ollama has to be running. It is not a test:
 pytest only collects tests/, and nothing here runs in CI.
@@ -35,7 +37,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # backend/
 
 import agent  # noqa: E402
 import llm  # noqa: E402
+import macros  # noqa: E402
 import tools  # noqa: E402
+
+# Measure against two known macros, not whatever is in your own macros.toml:
+# with any macros at all, run_macro is one more tool to tell apart.
+macros.PATH = Path(__file__).resolve().parent / "macros.toml"
 
 # (what you said, the tool she should call -- or None for a plain reply)
 CASES = [
@@ -71,6 +78,17 @@ APPS = [
     ("Open the control panel.", "open_app"),
 ]
 
+# Your own macros (bench/macros.toml: "work setup" and "study mode").
+# The paraphrase asks whether a name alone is enough for her to find one; the
+# last asks whether a macro that happens to contain VS Code steals the plain
+# request for VS Code.
+MACROS = [
+    ("Run work setup.", "run_macro"),
+    ("Start study mode.", "run_macro"),
+    ("Set up my desk for work.", "run_macro"),
+    ("Open VS Code.", "open_app"),
+]
+
 MARKDOWN = re.compile(r"\*\*|^\s*[-*+]\s|^\s*\d+\.\s|```|^#", re.MULTILINE)
 # A drive letter or a web address. (An earlier copy wrote this without the
 # raw string, lost the backslash, and so only ever matched the text "C:|".)
@@ -104,7 +122,7 @@ def score(label, cases, prompt, repeats):
         for text, wanted in cases:
             reply = llm.ask(
                 [{"role": "system", "content": prompt}, {"role": "user", "content": text}],
-                tools.TOOLS,
+                tools.offered(),
             )
             got = called(reply)
             total += 1
@@ -137,8 +155,9 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     repeats = int(sys.argv[1]) if len(sys.argv) > 1 else 2
     prompt = agent.system_prompt()
-    names = [t["function"]["name"] for t in tools.TOOLS]
+    names = [t["function"]["name"] for t in tools.offered()]
     print(f"model={llm.active_model}  tools={len(names)} {names}  repeats={repeats}")
     print(f"prompt: {len(prompt)} characters")
     score("ROUTING (the gate)", CASES, prompt, repeats)
     score("APPS (beyond the old six)", APPS, prompt, repeats)
+    score("MACROS (your own recipes)", MACROS, prompt, repeats)

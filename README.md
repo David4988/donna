@@ -61,7 +61,7 @@ I'm a final-year engineering student, and I'm building DONNA to understand how A
 | **Editable character** | Her personality is a Markdown file. Edit it and she changes on your next sentence | ✅ Works |
 | **Knows who you are** | Two Markdown files about you, so she stops answering every question as a stranger | ✅ Works |
 | **Subtitles in sync with her voice** | On-screen text currently runs ahead of the audio, because generating is faster than speaking | 🐛 Known issue |
-| **Macros** | One sentence runs a hand-written list of steps ("work setup") | 📋 Planned, next |
+| **Macros** | One sentence runs a list of steps you wrote ("run work setup"). Any of her tools can be a step | ✅ Works |
 | **More of the PC** | Volume, media keys, clipboard, windows, battery, free VRAM | 📋 Planned |
 | **Barge-in** | Cut her off mid-sentence, the way you would a person | 📋 Planned |
 | **Golden sphere UI** | A 3D orb that reacts when she listens, thinks and speaks | 📋 Planned (design in progress) |
@@ -224,6 +224,7 @@ Everything is set with environment variables (`$env:NAME = "value"` in PowerShel
 | `DONNA_SOUL` | `~/.cache/donna/SOUL.md` | Her character file |
 | `DONNA_ABOUT_DIR` | `~/.cache/donna` | Where `ABOUT_ME.md` and `USER_STATE.md` live |
 | `DONNA_SETTINGS` | `~/.cache/donna/settings.json` | The voice and speed you picked in the window |
+| `DONNA_MACROS` | `~/.cache/donna/macros.toml` | Your macros |
 
 ### Her character is a file
 
@@ -260,6 +261,32 @@ timetable as today's.
 
 Neither is in this repo. They're yours, they stay on your machine, and the only thing that
 reads them is a model running on localhost.
+
+### Macros: one sentence, many steps
+
+`~/.cache/donna/macros.toml`. Every tool call is a full trip through the model, 4 to 8 seconds
+each, and she stops after five in one reply. So "open VS Code, Chrome and the terminal" used to
+be slow at best. A macro does it as **one** call:
+
+```toml
+["work setup"]
+steps = [
+  { do = "open_app", app = "Visual Studio Code" },
+  { do = "open_app", app = "Google Chrome" },
+  { do = "open_app", app = "Terminal" },
+]
+```
+
+Then say **"run work setup"**. Each step is one of her own tools with that tool's arguments, so
+a macro can't do anything a single request couldn't. She writes the file on first run with the
+example commented out, and reads it every time you speak, so an edit works straight away.
+
+Steps run in order, and a failed step doesn't stop the rest. There's no `if`, no loop, and a
+macro can't run another macro. A step with a typo, like `ap = "Chrome"`, is caught when the file
+is read rather than halfway through, and skipped with a note in the log.
+
+Your macro *names* go to the model inside the tool definition, never into the prompt, so the
+measured rules above stay exactly as measured. With no macros she isn't even offered the tool.
 
 ---
 
@@ -384,8 +411,8 @@ DONNA can act on your PC, so the limits are built into the code, not left to the
 | 3.5 | **Wake word and voices** | "Hey Jarvis", Piper + Kokoro, live transcription, a settings strip | ✅ |
 | 3.75 | **A soul and a you** | `SOUL.md` and `ABOUT_ME.md`: she has a character and knows whose desk this is | ✅ |
 | 4 | **Every installed app** | Any Start Menu app by name, with ambiguity handled by asking | ✅ |
-| 5 | **Macros** | One sentence runs a hand-written recipe of steps | 🔜 Next |
-| 6 | **More of the PC** | Volume, media keys, clipboard, windows, battery, VRAM, in one `computer` tool | 📋 |
+| 5 | **Macros** | One sentence runs a hand-written recipe of steps | ✅ |
+| 6 | **More of the PC** | Volume, media keys, clipboard, windows, battery, VRAM, in one `computer` tool | 🔜 Next |
 | 7 | **Ask before acting** | A spoken "are you sure?" for anything that changes things | 📋 |
 | 8 | **Barge-in** | Cut her off mid-sentence | 📋 |
 | 9 | **The sphere** | A golden orb that reacts to her state and voice | 📋 |
@@ -409,8 +436,10 @@ donna/
 │   ├── stt.py  tts.py       # the only files that know Whisper / Piper + Kokoro
 │   ├── speech_text.py       # pure text rules. No I/O, so it's cheap to test
 │   ├── soul.py  about.py    # her character, and who you are
+│   ├── macros.py            # your recipes: read, checked, never trusted blindly
+│   ├── once.py              # say each complaint in the log once, not every turn
 │   ├── settings.py          # voice + speed, atomically written
-│   ├── tools.py             # open_app · find_files · web_search. The safety boundary
+│   ├── tools.py             # open_app · find_files · web_search · run_macro. The safety boundary
 │   ├── chat.py              # terminal client, for when the window is overkill
 │   ├── bench/routing.py     # the routing benchmark (needs Ollama; not part of pytest)
 │   └── tests/               # pytest; runs without any model

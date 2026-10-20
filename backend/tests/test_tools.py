@@ -253,8 +253,12 @@ def test_llm_is_not_given_a_list_of_apps():
 
 
 def test_every_tool_offered_has_a_function_behind_it():
-    """A tool declared to the model but never wired up fails only at runtime."""
-    assert {t["function"]["name"] for t in tools.TOOLS} == set(tools.FUNCTIONS)
+    """A tool declared to the model but never wired up fails only at runtime.
+
+    run_macro is only offered when you have macros, so it's counted with one.
+    """
+    offered = [*tools.TOOLS, tools.macro_tool(["work setup"])]
+    assert {t["function"]["name"] for t in offered} == set(tools.FUNCTIONS)
 
 
 # ---- reading the Start Menu

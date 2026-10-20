@@ -4,8 +4,10 @@ If it isn't in this file, the LLM can't do it. There is deliberately no
 "run a command" tool, and text written by the LLM never reaches a shell.
 
 - Each tool is a plain function that returns text (errors start with "Error:").
-- TOOLS describes the tools to the LLM (OpenAI "function" format).
-- run_tool() is the only way the agent runs a tool.
+- TOOLS describes the tools to the LLM (OpenAI "function" format); offered()
+  is what it is actually shown each turn -- TOOLS, plus your macros if any.
+- run_tool() is the only way the agent runs a tool, and the only way a macro
+  runs a step.
 """
 
 import json
@@ -20,6 +22,7 @@ from pathlib import Path
 from ddgs import DDGS
 
 import desktop
+import macros
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -458,6 +461,66 @@ def where_from(href):
     return without_scheme.split("/", 1)[0] or href
 
 
+# ---------------------------------------------------------------- run_macro
+
+# Your own named recipes, from macros.toml (see macros.py). Every step is one
+# of the tools above, run through run_tool() exactly as if the model had asked
+# for it -- so a macro can do nothing a single request couldn't.
+
+
+def run_macro(name):
+    recipes = macros.load(FUNCTIONS)
+    wanted = words(name)  # "Run Work-Setup" finds "work setup"
+    found = [known for known in recipes if words(known) == wanted]
+    if not found:
+        yours = f" Your macros are: {', '.join(recipes)}." if recipes else ""
+        return f"Error: you have no macro called '{name.strip()}'.{yours}"
+
+    known = found[0]
+    lines = [f"Ran your '{known}' macro:"]
+    # A failed step doesn't stop the rest. Every step is something she may
+    # already do on her own, so carrying on is safe, and she says what failed.
+    for tool, args in recipes[known]:
+        result = run_tool(tool, args)
+        lines.append("- " + result.replace("\n", "\n  "))
+    return "\n".join(lines)
+
+
+def macro_tool(names):
+    """run_macro as the model sees it: your macro names, as a closed list.
+
+    The same rule as everywhere else here -- the model picks from a list and
+    Python decides what that means -- and unlike apps, this list is short:
+    it's the handful of recipes you wrote.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": "run_macro",
+            "description": "Run one of the user's macros: a named list of steps they wrote.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "enum": names, "description": "Which macro."}
+                },
+                "required": ["name"],
+            },
+        },
+    }
+
+
+def offered():
+    """The tools in front of the model this turn: TOOLS, plus run_macro if you
+    have any macros.
+
+    With none it isn't offered at all. A tool she can never use is just one
+    more for a 4B model to confuse with the others, and routing is the thing
+    measured to break first (bench/routing.py).
+    """
+    names = list(macros.load(FUNCTIONS))
+    return [*TOOLS, macro_tool(names)] if names else TOOLS
+
+
 # ---------------------------------------------------------------- for the LLM
 
 TOOLS = [
@@ -512,7 +575,12 @@ TOOLS = [
     },
 ]
 
-FUNCTIONS = {"open_app": open_app, "find_files": find_files, "web_search": web_search}
+FUNCTIONS = {
+    "open_app": open_app,
+    "find_files": find_files,
+    "web_search": web_search,
+    "run_macro": run_macro,  # offered only when you have macros: see offered()
+}
 
 
 def run_tool(name, args):

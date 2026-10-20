@@ -276,6 +276,8 @@ def fake_reply(messages):
     for start in ("search the web for ", "search for ", "look up ", "google "):
         if text.lower().startswith(start):
             return _tool_call("web_search", query=text[len(start) :])
+    if words and words[0] == "run":
+        return _tool_call("run_macro", name=" ".join(text.split()[1:]))
     if words and words[0] in ("open", "launch", "start"):
         return _tool_call("open_app", app=text.split(maxsplit=1)[1] if len(words) > 1 else "")
     if words and words[0] in ("find", "locate"):
@@ -284,12 +286,17 @@ def fake_reply(messages):
     return {
         "role": "assistant",
         "content": "I'm DONNA's offline brain, so I only understand a few things, "
-        "like 'hello', 'open <app>', 'find <files>' and 'search the web for <topic>'.",
+        "like 'hello', 'open <app>', 'find <files>', 'run <macro>' and "
+        "'search the web for <topic>'.",
     }
 
 
-def _tool_call(name, **args):
-    """A reply asking for a tool, in the same format a real model uses."""
+def _tool_call(name, /, **args):
+    """A reply asking for a tool, in the same format a real model uses.
+
+    `name` is positional-only because run_macro's own argument is also called
+    name, and _tool_call("run_macro", name=...) would otherwise collide.
+    """
     call = {
         "id": f"call_{name}",
         "type": "function",
